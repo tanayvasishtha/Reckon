@@ -44,15 +44,73 @@ https://www.gao.gov/products/gao-26-108694
 GAO does not break duplicates out as a category. Do not imply that it does.
 
 **£55 billion to £81 billion lost to fraud and error in 2023-24.**
-UK National Audit Office, *Overview of the impact of fraud and error on public
-funds*, 18 November 2024.
-https://www.nao.org.uk/wp-content/uploads/2024/11/fraud-overview-2023-24.pdf
+UK National Audit Office, *Using data analytics to tackle fraud and error*,
+HC 988, 9 July 2025.
+https://www.nao.org.uk/reports/using-data-analytics-to-tackle-fraud-and-error/
+
+That report also frames the problem in almost the same words this project uses.
+It describes analytics as ranging "from basic tools that check a public body
+only paid a supplier once" up to AI, and observes that "most tools used in
+government bodies are designed to detect fraud and error, rather than prevent
+incorrect transactions before they are paid."
+
+**Procurement fraud is mostly overpayment, not theft.** UK National Audit
+Office, *Tackling fraud and corruption against government*, HC 1199,
+30 March 2023: "most cases of fraud tend to involve overpayments to
+contractors, through false or duplicate invoicing, and payments for substandard
+work or work not completed under contract terms."
+https://www.nao.org.uk/reports/tackling-fraud-and-corruption-against-government/
+
+**Detected error is growing far faster than detected fraud.** Central
+government reported £1.7 billion of detected fraud and error in 2023-24, the
+highest in a single year. Of the year-on-year change, detected error rose
+£327 million, up 67%, while detected fraud rose £21 million, up 3%.
+Public Sector Fraud Authority, *Cross-Government Fraud Landscape Report
+2022/23 and 2023/24*, February 2026.
+https://www.gov.uk/government/publications/cross-government-fraud-landscape-report-202223-and-202324
+
+That gap is the argument for a precision-first tool. The growth is in mistakes,
+not in criminals, and mistakes are exactly what a system tuned to avoid
+accusing people can safely surface.
 
 ## India
 
 India's Comptroller and Auditor General has documented this pattern directly.
+Every quote below was extracted from the report PDF itself, not from a summary.
 
-**Ayushman Bharat PM-JAY**, CAG Report No. 11 of 2023:
+**Contractors paid twice for the same item of work.** Karnataka, CAG Report
+No. 3 of 2025, paragraph 3.5, whose heading reads "Double payment to
+contractors for an item of work due to incorrect estimates and measurements".
+Across five works costing ₹128.75 crore, formwork was included as a separate
+estimate line and paid on top of rates that already covered it, causing
+₹0.95 crore of double payment. The government accepted the finding.
+https://cag.gov.in/webroot/uploads/download_audit_report/2023/REPORT-3-ENGLISH-068a6cd1d278e17.59235279.pdf
+
+This is the closest published analogue to what Reckon looks for: the same work,
+billed twice, through a mechanism no exact-match rule would catch, found only by
+reading the detail.
+
+**Suspicious double payments across schemes.** Telangana, CAG Report No. 5 of
+2024 on Building and Other Construction Workers, paragraph 6.6, a paragraph
+whose title is literally "Suspicious double payments in different Schemes".
+Eight death claims paid twice for ₹0.81 crore, eight beneficiaries paid twice
+for ₹0.40 crore after registering in different districts, and 29 maternity
+benefits paid twice against the same registration number for ₹8.60 lakh. The
+auditor's stated root cause is the absence of a unique identifier and the lack
+of data integration, which is the entity resolution problem in another domain.
+
+**The same bank account credited repeatedly.** Assam, CAG Report No. 2 of 2024.
+Table 1.6 is titled "No. of cases paid more than once for the same period":
+2,424 cases where one account number appeared against multiple beneficiaries,
+worth ₹74.47 lakh in 2018-19 and ₹25.29 lakh in 2019-20. Separately, 444
+scholarship beneficiaries with the same bank account were paid twice for
+₹10.06 lakh; after moving to a central payment platform that fell to seven
+beneficiaries and ₹0.16 lakh, and the report notes the system was still not able
+to stop the irregularity.
+
+**Ayushman Bharat PM-JAY**, CAG Report No. 11 of 2023. Note the number: this
+audit is Report No. 11, not Report No. 20, which is a food grains audit
+containing no duplicate payment findings at all.
 - The scheme ID was not unique in 157,176 cases, with 105,138 appearing twice
 - Double payment of ₹3.27 lakh to 13 hospitals that submitted claims twice for 35 patients
 - 4,761 registrations against seven Aadhaar numbers in Tamil Nadu
@@ -136,7 +194,7 @@ primary source.
 
 - **"Duplicate payments are 0.1% to 0.5% of disbursements"**, attributed to the Association for Financial Professionals. No primary source found.
 - **"One in a thousand invoices is a duplicate"**, attributed to the Institute of Internal Auditors. No primary source found. This is the likely origin of the ubiquitous 0.1% figure.
-- **"Up to 1.5% of outgoing cash flow"**, attributed to the Institute of Finance and Management, whose material is membership gated. The figure appears in the UK National Fraud Initiative report, but its footnote credits a company that sells duplicate payment detection software. A government report reprinting a vendor claim does not make it an audit finding.
+- **"Up to 1.5% of outgoing cash flow"**. This one deserves detail because it looks respectable. It appears in the UK National Fraud Initiative report, which then extrapolates it to £1.9 billion for local authorities and £1.31 billion for the NHS. But footnote 37 of that report credits the figure to a company that sells duplicate payment detection software. A government body republishing a vendor estimate does not turn it into a government measurement, and the extrapolations inherit the same weakness. If it is used at all, it must be attributed as a vendor estimate quoted by the Public Sector Fraud Authority.
 - **"Recovery audit contingency fees are 20% to 35%"**. Every source found is a recovery audit firm's own marketing. No trade association publishes a rate. Use the CMS figure above instead.
 - **"1.29% of invoices are duplicates"**, attributed to a large expense software vendor. Unverified.
 - **"Anti money laundering alerts are 95% to 98% false positives"**. The most cited source carries no footnote and the underlying paper is unreachable.
