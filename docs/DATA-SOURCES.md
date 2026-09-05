@@ -50,13 +50,14 @@ trailing asterisks and padded whitespace.
 
 ## Investigated and rejected
 
-### India: no public invoice-level vendor payment data exists
+### India: central government publishes awards, but one municipality publishes real payments
 
-This was researched thoroughly because an Indian dataset would have been useful.
-The conclusion is a finding in its own right.
+A first pass concluded that India publishes no invoice-level vendor payment
+data. That was wrong, and the correction matters, so both halves are recorded
+here.
 
-**India publishes contract awards, not payments.** Seven central sources were
-checked directly:
+**Central government does publish awards rather than payments.** Seven sources
+were checked directly:
 
 | Source | Outcome |
 |---|---|
@@ -68,22 +69,54 @@ checked directly:
 | data.gov.in | Catalogue API is open and keyless, 354,773 resources. Searching it returns zero supplier or invoice datasets; the vendor hits are street-vendor loan aggregates. File downloads return 403 to any non-browser client. |
 | Government e-Marketplace | Contract search is CAPTCHA gated. The open bid API works and reports 5.8M records, but carries no seller name and no award value, and is capped at 10 records per request. |
 
-**What does work**, via the Open Contracting Partnership mirror:
+**But Bengaluru does publish a real accounts payable ledger.** Bruhat Bengaluru
+Mahanagara Palike work orders and bill payments, hosted on OpenCity and sourced
+from BBMP's own accounts portal, which is live and public at
+`https://account.bbmpgov.in/PublicView/?l=1` with its own export.
+
+Roughly 499,000 payment lines across several datasets, covering 2010 to 2025-26,
+direct CSV, no login. The richest of them is the Bill Register, 5,789 rows and
+31 columns:
+
+`Contractor_Name`, gross, deduction and nett amounts, `Bill Register No` and
+date, `Sub Bill Register No` and date, `CBR_No` and date, `RTGS_No` and date,
+`Job_Code`, `Work_Order` and date, ward, division and zone, budget head, and
+engineer details.
+
+That is an accounts payable ledger with four separate voucher identifiers, which
+is more than either American source provides. Contractor name variation is
+substantial: 7,715 distinct strings, of which 1,486 have more than one spelling.
+Real examples include `KRIDL`, `KRIDL,`, `KRIDL:` and `KRIDl`, and
+`K DAMODAR AND CO` against `K Damodar & Co` and `K Damodar & Co.`
+
+Known traps, recorded so nobody rediscovers them the hard way. Most ward files
+carry a title banner on the first row, so the header is not row one and blind
+skipping breaks it. In the 2010 to 2018 files roughly 15% of rows have the total
+and deduction values swapped relative to their headers, so validate with
+total minus deduction equals net rather than trusting column order. The bill
+reference field is a compound string needing extraction. Work order numbers are
+per-ward sequences and are not globally unique.
+
+**Also available**, via the Open Contracting Partnership mirror:
 
 - Himachal Pradesh, CivicDataLab: `https://data.open-contracting.org/en/publication/77`, CC BY 4.0. 4,211 award rows joinable to 1,858 distinct supplier names, with amount, date and buying department. Names are genuinely messy, which suits fuzzy matching.
 - Assam, Finance Department: `https://data.open-contracting.org/en/publication/131`, Government Open Data License India. 34,232 rows, of which 10,381 are awarded, but there is no supplier table so vendor names are absent.
 
-**Why this is not in the pipeline as a payment source.** These are contract
+**On the award data specifically.** Himachal Pradesh and Assam are contract
 awards, not payments. A duplicate found in them is a duplicate award, a
 near-identical work order, or a split contract, not a double-paid invoice.
 Presenting award data as payment data would misrepresent what the system found,
-so it is not used that way.
+so it is not used that way. Contract splitting to stay under an approval
+threshold is a real control failure the engine can detect, but that is a
+different claim and needs its own label.
 
-Contract splitting to stay under an approval threshold is a real procurement
-control failure and the engine can detect it, but it is a different claim from
-duplicate payment recovery and would need to be labelled as such.
+The Bengaluru data does not carry that caveat. Those are bills paid to
+contractors, with amounts, dates and voucher numbers, which is the same shape as
+Los Angeles and Oklahoma.
 
-### Other sources checked
+### Other sources checked and rejected
+
+
 
 - USAspending.gov: an awards and obligations database, not an accounts payable ledger. No invoice number, no invoice date, no payment record.
 - SpendLedger: structurally the closest thing to an AP ledger found, but the free export is capped and bulk access is licensed.
