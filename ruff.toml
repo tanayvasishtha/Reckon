@@ -1,0 +1,2 @@
+target-version = "py311"
+include = ["*.py", "*.pyi"]
