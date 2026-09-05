@@ -97,34 +97,41 @@ decoys. Decoys outnumber truths so precision is a real measurement.
 
 ## Model routing
 
-| Role | Model | Reason |
+Reckon is provider-neutral. Stage 5 talks to any OpenAI-compatible chat
+completions endpoint, configured entirely through settings, so nothing in this
+codebase is tied to one vendor and a reviewer can run it with whatever key they
+already have.
+
+| Setting | Purpose | Default |
 |---|---|---|
-| First pass | `claude-haiku-4-5` | one call per candidate, high volume |
-| Escalation | `claude-sonnet-5` | only when first-pass confidence is below 0.7 |
+| `RECKON_API_BASE` | base URL of an OpenAI-compatible endpoint | none, required for live mode |
+| `RECKON_API_KEY` | key for that endpoint | none, replay mode if absent |
+| `RECKON_MODEL_FAST` | first pass, one call per candidate | set per deployment |
+| `RECKON_MODEL_ESCALATE` | used when first-pass confidence is below 0.7 | set per deployment |
+| `RECKON_PRICE_FAST_IN` / `_OUT` | dollars per million tokens, for the cost table | 0 |
+| `RECKON_PRICE_ESC_IN` / `_OUT` | dollars per million tokens, for the cost table | 0 |
 
-Pricing per million tokens, for the cost table: Haiku 4.5 is $1 in and $5 out.
-Sonnet 5 is $2 in and $10 out.
+Two tiers, because most candidates are easy and a few are not. The fast model
+sees every candidate. The escalation model sees only the ones the fast model is
+unsure about. Report the escalation rate in the results, since it is the
+cost-quality dial.
 
-Put the stable system prompt and rules text first, marked with `cache_control`,
-so the prefix caches across every call. Verify `usage.cache_read_input_tokens`
-is non-zero after the second call. If it stays zero, something in the prefix is
-varying between calls and the cost story is broken.
+Prices are configuration rather than constants, so the cost table stays honest
+whichever endpoint is used and nobody has to edit code to correct a number.
 
-### SDK constraints
+### Prompt construction
 
-Invoke the bundled `claude-api` skill before writing SDK code. These are not
-guessable.
+Put the stable system prompt and rules text first and the per-candidate payload
+last. The prefix is identical across thousands of calls, so any endpoint that
+supports prefix caching will hit on it. If the endpoint reports cache statistics,
+record them and put the hit rate in the results. If the reported cache reads stay
+at zero across a run, something in the prefix is varying between calls and the
+cost story is broken.
 
-- Model ids are exact and carry no date suffix. `claude-haiku-4-5`, never
-  `claude-haiku-4-5-20251001`.
-- `claude-sonnet-5` rejects `budget_tokens` with a 400. Use
-  `thinking={"type": "adaptive"}` and `output_config={"effort": "low"}`.
-- `claude-haiku-4-5` is the reverse: `thinking={"type": "enabled",
-  "budget_tokens": N}`, and it errors on `effort`.
-- Structured output goes in `output_config={"format": {...}}`. The older
-  `output_format` parameter is deprecated. Prefer `client.messages.parse()`.
-- Assistant prefill returns a 400 on Sonnet 5. Do not use it.
-- Do not lowball `max_tokens`. A truncated response costs a retry.
+Ask for structured JSON output matching the Verdict schema above. Validate every
+response against the schema before use, and mark a response that fails
+validation as `errored` rather than guessing at it. Do not set `max_tokens` so
+low that a verdict truncates, because a truncated response costs a full retry.
 
 ## Incremental runs
 

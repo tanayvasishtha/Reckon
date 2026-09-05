@@ -97,8 +97,8 @@ and gives it five minutes.
 - **Runs with no API key.** Recorded cassettes live in `fixtures/cassettes/`,
   keyed on a hash of the candidate payload. With no key set, the pipeline runs
   in replay mode against them: full output, deterministic, offline, free. With
-  `ANTHROPIC_API_KEY` set it runs live. The run header states which mode it is
-  in.
+  `RECKON_API_KEY` and `RECKON_API_BASE` set it runs live against any
+  OpenAI-compatible endpoint. The run header states which mode it is in.
 - **One command.** `git clone`, then `make demo`. Under three minutes cold,
   including install. `make demo-fast` runs a 20,000-row slice in under 30
   seconds.
