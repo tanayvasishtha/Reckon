@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.pytest_cache/
+.ruff_cache/
+data/generated/
