@@ -1,0 +1,22 @@
+[project]
+name = "reckon"
+version = "0.1.0"
+description = "Accounts payable exception agent"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx",
+    "pandas",
+    "pydantic",
+    "pyyaml",
+]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[tool.uv]
+package = false
