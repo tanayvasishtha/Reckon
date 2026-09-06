@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f3f1ec;
+  --color-card: #fffefa;
+  --color-line: #d8d3c9;
+  --color-ink: #1a1916;
+  --color-mute: #5c5852;
+  --color-accent: #215e9a;
+  --color-accent-hover: #1a4e82;
+  --color-diff: #ebe6dc;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas,
+    "Liberation Mono", monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    transition:
+      color 120ms,
+      background-color 120ms,
+      border-color 120ms;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+}
