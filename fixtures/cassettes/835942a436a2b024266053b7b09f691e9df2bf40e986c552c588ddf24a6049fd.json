@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"98.48\",\"candidate_id\":\"invoice_variant:EVAL00000208:EVAL00000210\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000208\",\"EVAL00000210\"]},\"related\":[],\"transactions\":[{\"amount\":\"98.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"98.48\"],\"invoice_amount\":\"98.48\",\"invoice_canonical\":\"EVL00077M2\",\"invoice_date\":\"2018-02-15\",\"invoice_number_raw\":\"EVL00077M2\",\"line_count\":1,\"payment_date\":\"2018-02-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"CPO08240000492119\",\"transaction_id\":\"EVAL00000208\",\"vendor_canonical\":\"KONICAMINOLTABUSINESSSOLUTIONS\",\"vendor_id\":\"000002245\",\"vendor_name_raw\":\"KONICA MINOLTA BUSINESS SOLUTIONS\"},{\"amount\":\"98.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"98.48\"],\"invoice_amount\":\"98.48\",\"invoice_canonical\":\"EVL00077M4\",\"invoice_date\":\"2018-04-15\",\"invoice_number_raw\":\"EVL00077M4\",\"line_count\":1,\"payment_date\":\"2018-04-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"CPO08240000492119\",\"transaction_id\":\"EVAL00000210\",\"vendor_canonical\":\"KONICAMINOLTABUSINESSSOLUTIONS\",\"vendor_id\":\"000002245\",\"vendor_name_raw\":\"KONICA MINOLTA BUSINESS SOLUTIONS\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000208:EVAL00000210\",\"verdict\":\"escalate\",\"explanation_type\":\"none\",\"reasoning\":\"Two paid transactions for the same amount, vendor, department, and PO but with different invoice numbers and dates. No clear explanation fits the available categories.\",\"evidence\":[{\"field\":\"amount\",\"values\":[\"98.48\",\"98.48\"]},{\"field\":\"vendor_name_raw\",\"values\":[\"KONICA MINOLTA BUSINESS SOLUTIONS\",\"KONICA MINOLTA BUSINESS SOLUTIONS\"]},{\"field\":\"po_number\",\"values\":[\"CPO08240000492119\",\"CPO08240000492119\"]},{\"field\":\"invoice_number_raw\",\"values\":[\"EVL00077M2\",\"EVL00077M4\"]},{\"field\":\"payment_status\",\"values\":[\"PAID\",\"PAID\"]},{\"field\":\"invoice_date\",\"values\":[\"2018-02-15\",\"2018-04-15\"]},{\"field\":\"line_count\",\"values\":[\"1\",\"1\"]},{\"field\":\"description\",\"values\":[\"Professional services\",\"Professional services\"]},{\"field\":\"department\",\"values\":[\"BUILDING AND SAFETY\",\"BUILDING AND SAFETY\"]},{\"field\":\"invoice_canonical\",\"values\":[\"EVL00077M2\",\"EVL00077M4\"]}],\"confidence\":0.75}",
+          "function_call": null,
+          "reasoning": "Let me analyze the pair of transactions provided:\n\nTransaction 1 (EVAL00000208):\n- Amount: 98.48\n- Invoice: EVL00077M2\n- Invoice Date: 2018-02-15\n- PO: CPO08240000492119\n- Status: PAID\n\nTransaction 2 (EVAL00000210):\n- Amount: 98.48\n- Invoice: EVL00077M4\n- Invoice Date: 2018-04-15\n- PO: CPO08240000492119\n- Status: PAID\n\nBoth transactions have:\n- The same amount (98.48)\n- The same department (BUILDING AND SAFETY)\n- The same description (Professional services)\n- The same vendor (KONICA MINOLTA BUSINESS SOLUTIONS)\n- The same PO number (CPO08240000492119)\n- Both are PAID\n\nThe main differences are:\n- Different invoice numbers (EVL00077M2 vs EVL00077M4)\n- Different invoice dates (2018-02-15 vs 2018-04-15)\n\nThe signal is \"invoice_variant\", which likely means the system detected some variation in the invoice numbers. \n\nIs this a duplicate payment? Given that:\n1. Both transactions are for the same amount\n2. They're for the same vendor\n3. They're for the same department and description\n4. They share the same PO number\n5. Both are PAID\n\nHowever, they have different invoice numbers and dates, which could indicate:\n- They are related invoices but not duplicates (perhaps from a contract or service agreement where multiple invoices were issued)\n- They are related payments against the same PO (perhaps partial payments or progress payments)\n\nGiven that the existing rules have already removed same-id pairs, cancelled statuses, and distribution-line splits, this pair represents a situation where two seemingly different invoices/paid transactions exist for the same vendor and department.\n\nGiven the constraints:\n1. This doesn't fit \"cancelled\" (neither is cancelled)\n2. This doesn't fit \"line_split\" (each has one line with the full amount)\n3. This doesn't obviously fit \"progress_payment\" (no clear progress indication)\n4. This doesn't fit \"recurring\" (only these two transactions are provided)\n5. This doesn't fit \"different_po\" (same PO number)\n6. This doesn't fit \"partial_pair\" (same amount)\n\nSince I can't name a matching explanation from the available categories, and the pair still looks like a recoverable duplicate (two paid transactions for the same vendor/department with the same amount and PO), I should escalate this to a human reviewer.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686823,
+    "id": "chatcmpl-52510619-1a14-4f87-974f-48ea6cceee7f",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 838,
+      "prompt_tokens": 942,
+      "prompt_tokens_details": null,
+      "total_tokens": 1780
+    }
+  }
+}

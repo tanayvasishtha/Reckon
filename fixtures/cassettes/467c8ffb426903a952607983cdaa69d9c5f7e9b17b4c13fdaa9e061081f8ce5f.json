@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"975.96\",\"candidate_id\":\"invoice_variant:EVAL00000221:EVAL00000224\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000221\",\"EVAL00000224\"]},\"related\":[],\"transactions\":[{\"amount\":\"975.96\",\"department\":\"GENERAL SERVICES\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"975.96\"],\"invoice_amount\":\"975.96\",\"invoice_canonical\":\"EVL00079M3\",\"invoice_date\":\"2018-03-15\",\"invoice_number_raw\":\"EVL00079M3\",\"line_count\":1,\"payment_date\":\"2018-03-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE40AE24400102M\",\"transaction_id\":\"EVAL00000221\",\"vendor_canonical\":\"DANIELSTIRESERVICE\",\"vendor_id\":\"VC0000052086\",\"vendor_name_raw\":\"DANIELS TIRE SERVICE, INC.\"},{\"amount\":\"975.96\",\"department\":\"GENERAL SERVICES\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"975.96\"],\"invoice_amount\":\"975.96\",\"invoice_canonical\":\"EVL00079M6\",\"invoice_date\":\"2018-06-15\",\"invoice_number_raw\":\"EVL00079M6\",\"line_count\":1,\"payment_date\":\"2018-06-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE40AE24400102M\",\"transaction_id\":\"EVAL00000224\",\"vendor_canonical\":\"DANIELSTIRESERVICE\",\"vendor_id\":\"VC0000052086\",\"vendor_name_raw\":\"DANIELS TIRE SERVICE, INC.\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000221:EVAL00000224\",\"verdict\":\"dismiss\",\"explanation_type\":\"recurring\",\"reasoning\":\"Same vendor, PO number, amount (975.96), and exactly three-month payment interval (March 15 to June 15). Invoice numbers M3 and M6 align with month sequences.\",\"evidence\":[{\"field\":\"vendor_canonical\",\"values\":[\"DANIELSTIRESERVICE\"]},{\"field\":\"po_number\",\"values\":[\"GAEAE40AE24400102M\"]},{\"field\":\"amount\",\"values\":[\"975.96\"]},{\"field\":\"payment_date\",\"values\":[\"2018-03-15\",\"2018-06-15\"]},{\"field\":\"invoice_number_raw\",\"values\":[\"EVL00079M3\",\"EVL00079M6\"]}], \"confidence\":0.9}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Candidate:**\n    *   `candidate_id`: invoice_variant:EVAL00000221:EVAL00000224\n    *   `amount_at_risk`: 975.96\n    *   `signal`: invoice_variant (Flagged because invoice numbers are variants of each other: EVL00079M3 vs EVL00079M6).\n    *   `related`: empty array.\n\n2.  **Analyze the Transactions:**\n    *   **Row 1 (EVAL00000221):**\n        *   Amount: 975.96\n        *   Vendor: DANIELS TIRE SERVICE, INC. (VC0000052086)\n        *   PO: GAEAE40AE24400102M\n        *   Invoice: EVL00079M3\n        *   Invoice Date: 2018-03-15\n        *   Status: PAID\n        *   Desc: Professional services\n    *   **Row 2 (EVAL00000224):**\n        *   Amount: 975.96\n        *   Vendor: DANIELS TIRE SERVICE, INC. (VC0000052086)\n        *   PO: GAEAE40AE24400102M\n        *   Invoice: EVL00079M6\n        *   Invoice Date: 2018-06-15\n        *   Status: PAID\n        *   Desc: Professional services\n\n3.  **Evaluate against Explanation Types:**\n\n    *   *cancelled?* No. Both are PAID.\n    *   *line_split?* Unlikely for a single line item invoice of 975.96. There are no distinct lines to split.\n    *   *progress_payment?* Unlikely. PO is the same. Dates are different (March vs June). Usually progress payments might imply contract draws, but the description \"Professional services\" and invoice numbers (M3 vs M6) suggest specific invoices for work done. However, look at the dates. March 15th and June 15th. This is a 3-month gap.\n    *   *recurring?* This is a strong candidate.\n        *   Same Vendor: YES.\n        *   Same PO: YES.\n        *   Same Amount: YES (975.96).\n        *   Same Description: YES (Professional services).\n        *   Dates: March 15 and June 15.\n        *   Invoice Numbers: M3 and M6. This often looks like a variant signal, but in a service context (tire service), this could be invoice M3 for a quarter, and M6 for the next, or just sequential invoice numbers generated by the vendor that happen to overlap slightly (e.g., wrapping year-end).\n    *   *different_po?* No, PO numbers are identical (GAEAE40AE24400102M).\n    *   *partial_pair?* No, the amounts are identical, not one partial and one remainder.\n\n4.  **Re-evaluating \"recurring\":**\n    *   If I look closely at the invoice numbers: `EVL00079M3` and `EVL00079M6`. The vendor might be using a system that generates M3 for March, M6 for June.\n    *   Alternatively, is it possible they are related payments for the same contract?\n    *   Let's check the other \"invoice_variant\" rules. Usually, `M3` vs `M6` implies a discrepancy.\n    *   However, look at the PO number: `GAEAE40AE24400102M`.\n    *   Look at the vendor: \"DANIELS TIRE SERVICE, INC.\"\n    *   The signal is \"invoice_variant\".\n    *   If they are the same PO, and same amount, and same vendor, and both PAID, the most charitable explanation is that these are related payments (recurring or progress). Given the month numbers (March 15, June 15), a recurring service agreement aligns perfectly.\n    *   Is it *definitive*? Not 100% (could be a credit memo vs invoice disguised), but it is the best explanation to dismiss.\n\n    *Wait, let's look at `different_po` again.* Sometimes POs differ by characters but refer to the same line item or contract. Here they are identical `GAEAE40AE24400102M`.\n    *Wait, let's look at `line_split`.* Distinct line amounts are identical strings in both. 1 line count.\n    *Wait, let's look at `recurring`.* The dates are March 15 and June 15. This is often a quarterly billing cycle. The invoice numbers are variants (M3, M6). This strongly suggests a recurring service payment.\n\n    *Constraint Check:* \"If you can name a matching explanation, dismiss.\"\n    Explanation: recurring.\n    Reasoning: Same vendor, same PO number, same amount, and payment dates are exactly 3 months apart (March 15 to June 15). Invoice numbers show month sequences (M3, M6).\n\n    *Confidence:* High, likely 0.9.\n\n5.  **Drafting the JSON:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000221:EVAL00000224\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"recurring\"\n    *   `reasoning`: \"Same vendor, PO, and amount. Dates are exactly 3 months apart (March 15 to June 15). Invoice numbers M3 and M6 suggest a recurring payment schedule.\"\n    *   `evidence`:\n        *   field: \"vendor_canonical\", values: [\"DANIELSTIRESERVICE\"]\n        *   field: \"po_number\", values: [\"GAEAE40AE24400102M\"]\n        *   field: \"amount\", values: [\"975.96\"]\n        *   field: \"payment_date\", values: [\"2018-03-15\", \"2018-06-15\"]\n    *   `confidence`: 0.9\n\n6.  **Final Review:**\n    *   Do I have 100% certainty? No. Could be two identical invoices for two different services. But `recurring` is a legitimate explanation provided by the data patterns (Same amount, Same vendor, Same PO, 3 month cadence). It is the best fit for a \"judgement\" to avoid a false positive.\n    *   The prompt asks for \"honest\" confidence. 0.9 is honest because the pattern is strong.\n\n    Let's refine the explanation. The PO is the same. The amount is the same. The vendor is the same. The dates are sequential months (March 15 -> June 15). This is standard recurring service payment behavior. The `recurring` type is appropriate.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686945,
+    "id": "chatcmpl-483b70de-1e28-415d-9109-17fa959aeae0",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1626,
+      "prompt_tokens": 939,
+      "prompt_tokens_details": null,
+      "total_tokens": 2565
+    }
+  }
+}

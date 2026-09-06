@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"7.36\",\"candidate_id\":\"split_payment:EVAL00000119:EVAL00000120\",\"signal\":\"split_payment\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000119\",\"EVAL00000120\"]},\"related\":[],\"transactions\":[{\"amount\":\"7.36\",\"department\":\"FIRE\",\"description\":\"GL distribution line 1 of 2\",\"distinct_line_amounts\":[\"7.36\"],\"invoice_amount\":\"7.36\",\"invoice_canonical\":\"EVL00060\",\"invoice_date\":\"2019-05-03\",\"invoice_number_raw\":\"EVL00060\",\"line_count\":1,\"payment_date\":\"2019-05-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000493260\",\"transaction_id\":\"EVAL00000119\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"},{\"amount\":\"17.17\",\"department\":\"FIRE\",\"description\":\"GL distribution line 2 of 2\",\"distinct_line_amounts\":[\"17.17\"],\"invoice_amount\":\"17.17\",\"invoice_canonical\":\"EVL00060\",\"invoice_date\":\"2019-05-03\",\"invoice_number_raw\":\"EVL00060\",\"line_count\":1,\"payment_date\":\"2019-05-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000493260\",\"transaction_id\":\"EVAL00000120\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"split_payment:EVAL00000119:EVAL00000120\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"line_split\",\n  \"reasoning\": \"Payments are explicitly identified as distribution lines of the same invoice (EVL00060) labeled 'GL distribution line 1 of 2' and 'GL distribution line 2 of 2'.\",\n  \"evidence\": [\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"GL distribution line 1 of 2\",\n        \"GL distribution line 2 of 2\"\n      ]\n    },\n    {\n      \"field\": \"invoice_canonical\",\n      \"values\": [\n        \"EVL00060\",\n        \"EVL00060\"\n      ]\n    }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for an accounts payable duplicate-payment pipeline (Stage 5).\n    *   **Goal:** Dismiss candidates with a legitimate explanation (do not escalate unless necessary).\n    *   **Output:** Single JSON object (candidate_id, verdict, explanation_type, reasoning, evidence, confidence). No markdown, no commentary.\n    *   **Key Constraints:** Kill candidates, don't raise them. Explainations override flags. Use specific \"explanation_type\" enum. Use decimal comparison.\n\n2.  **Analyze the Input Data:**\n    *   `candidate_id`: \"split_payment:EVAL00000119:EVAL00000120\"\n    *   `signal`: \"split_payment\"\n    *   `related`: [] (Empty array, no related rows to look at).\n    *   `transactions`:\n        *   `EVAL00000119`:\n            *   `amount`: \"7.36\"\n            *   `description`: \"GL distribution line 1 of 2\"\n            *   `line_count`: 1\n            *   `invoice_canonical`: \"EVL00060\"\n            *   `vendor_canonical`: \"TURNOUTMAINTENANCE\"\n            *   `po_number`: \"CPO38240000493260\"\n            *   `payment_status`: \"PAID\"\n            *   `invoice_amount`: \"7.36\"\n            *   `distinct_line_amounts`: [\"7.36\"]\n        *   `EVAL00000120`:\n            *   `amount`: \"17.17\"\n            *   `description`: \"GL distribution line 2 of 2\"\n            *   `line_count`: 1\n            *   `invoice_canonical`: \"EVL00060\"\n            *   `vendor_canonical`: \"TURNOUTMAINTENANCE\"\n            *   `po_number`: \"CPO38240000493260\"\n            *   `payment_status`: \"PAID\"\n            *   `invoice_amount`: \"17.17\"\n            *   `distinct_line_amounts`: [\"17.17\"]\n\n3.  **Determine Verdict:**\n    *   The signal is `split_payment`.\n    *   The descriptions explicitly say \"GL distribution line 1 of 2\" and \"GL distribution line 2 of 2\".\n    *   This confirms they are distribution lines of the *same* invoice (\"EVL00060\"), not duplicate payments of the same invoice amount.\n    *   The amounts sum to a total (7.36 + 17.17 = 24.53), which matches the total invoice amount implied by the distribution structure.\n    *   This is a classic `line_split` case.\n\n4.  **Select Explanation Type:**\n    *   `line_split`: Fits perfectly.\n\n5.  **Draft Reasoning:**\n    *   \"Both payments correspond to distribution lines of the same invoice (EVL00060). Descriptions explicitly state 'GL distribution line X of 2'.\"\n\n6.  **Construct Evidence:**\n    *   Field: `description`, Values: [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]\n    *   Field: `invoice_canonical`, Values: [\"EVL00060\", \"EVL00060\"]\n    *   Field: `amount`, Values: [\"7.36\", \"17.17\"] (Optional, but good for context)\n\n7.  **Set Confidence:**\n    *   The evidence is explicit. Confidence should be high (0.99 or 1.0). Let's go with 1.0 for deterministic matches like explicit text.\n\n8.  **Final JSON Construction:**\n    *   `candidate_id`: \"split_payment:EVAL00000119:EVAL00000120\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"line_split\"\n    *   `reasoning`: \"Explicitly listed as GL distribution lines (1 of 2 and 2 of 2) for the same invoice (EVL00060).\"\n    *   `evidence`: [{\"field\": \"description\", \"values\": [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]}, {\"field\": \"invoice_canonical\", \"values\": [\"EVL00060\", \"EVL00060\"]}]\n    *   `confidence`: 1.0\n\n9.  **Review against constraints:**\n    *   Single JSON object? Yes.\n    *   No markdown? Yes.\n    *   No commentary? Yes.\n    *   Correct keys? Yes.\n    *   Correct types/values? Yes.\n\n    *Self-Correction/Refinement:* The prompt asks for `distinct_line_amounts` in the evidence if relevant. The transaction data shows `distinct_line_amounts` but the *explanation* text contains the line numbers. The `description` field is the key here. I will include description and invoice_canonical in evidence.\n\n    Let's look at the explanation types again.\n    - `line_split`: distribution lines of one invoice, not two payments.\n    This fits 100%.\n\n    Final check of the output format.\n    {\n    \"candidate_id\": \"split_payment:EVAL00000119:EVAL00000120\",\n    \"verdict\": \"dismiss\",\n    \"explanation_type\": \"line_split\",\n    \"reasoning\": \"Descriptions explicitly identify payments as 'GL distribution line 1 of 2' and 'GL distribution line 2 of 2' for the same canonical invoice.\",\n    \"evidence\": [\n      {\n        \"field\": \"description\",\n        \"values\": [\n          \"GL distribution line 1 of 2\",\n          \"GL distribution line 2 of 2\"\n        ]\n      },\n      {\n        \"field\": \"invoice_canonical\",\n        \"values\": [\n          \"EVL00060\",\n          \"EVL00060\"\n        ]\n      }\n    ],\n    \"confidence\": 1\n    }\n\n    Looks solid.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788687599,
+    "id": "chatcmpl-2eebc511-3a7d-4175-8427-270fa6973223",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1443,
+      "prompt_tokens": 928,
+      "prompt_tokens_details": null,
+      "total_tokens": 2371
+    }
+  }
+}

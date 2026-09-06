@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"225\",\"candidate_id\":\"invoice_variant:AD26240000121175:AD26240000121184\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000121175\",\"AD26240000121184\"]},\"related\":[],\"transactions\":[{\"amount\":\"225\",\"department\":\"ANIMAL SERVICES\",\"description\":\"PRIVACY-ANIMAL SERVICES\",\"distinct_line_amounts\":[\"225\"],\"invoice_amount\":\"225\",\"invoice_canonical\":\"62410006OO132\",\"invoice_date\":\"2024-06-02\",\"invoice_number_raw\":\"062410006OO132\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE06AE24000036M\",\"transaction_id\":\"AD26240000121175\",\"vendor_canonical\":\"PRIVACYANIMALSERVICES\",\"vendor_id\":\"PRIVACY-ANIMAL SERVICES\",\"vendor_name_raw\":\"PRIVACY-ANIMAL SERVICES\"},{\"amount\":\"225\",\"department\":\"ANIMAL SERVICES\",\"description\":\"PRIVACY-ANIMAL SERVICES\",\"distinct_line_amounts\":[\"225\"],\"invoice_amount\":\"225\",\"invoice_canonical\":\"62410006OO131\",\"invoice_date\":\"2024-05-12\",\"invoice_number_raw\":\"062410006OO131\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE06AE24000034M\",\"transaction_id\":\"AD26240000121184\",\"vendor_canonical\":\"PRIVACYANIMALSERVICES\",\"vendor_id\":\"PRIVACY-ANIMAL SERVICES\",\"vendor_name_raw\":\"PRIVACY-ANIMAL SERVICES\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:AD26240000121175:AD26240000121184\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"recurring\",\n  \"reasoning\": \"Recurring monthly payment. Same vendor, consistent amount ($225), and dates in May and June indicate a regular billing cycle or subscription fee.\",\n  \"evidence\": [\n    {\n      \"field\": \"vendor_name\",\n      \"values\": [\n        \"PRIVACY-ANIMAL SERVICES\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"225\"\n      ]\n    },\n    {\n      \"field\": \"invoice_date\",\n      \"values\": [\n        \"2024-05-12\",\n        \"2024-06-02\"\n      ]\n    }\n  ],\n  \"confidence\": 0.9\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Candidate Pair:**\n    *   **Candidate ID:** invoice_variant:AD26240000121175:AD26240000121184\n    *   **Signal:** invoice_variant.\n    *   **Amount:** $225.00 (decimal).\n    *   **Transactions:**\n        *   **Tx 1:** `AD26240000121175`. Amount: $225. Invoice #: `062410006OO132`. Invoice Date: 2024-06-02. PO: `GAEAE06AE24000036M`. Status: PAID.\n        *   **Tx 2:** `AD26240000121184`. Amount: $225. Invoice #: `062410006OO131`. Invoice Date: 2024-05-12. PO: `GAEAE06AE24000034M`. Status: PAID.\n\n2.  **Evaluate for \"Legitimate Explanation\":**\n    *   **Same ID?** No.\n    *   **Cancelled?** No, both are \"PAID\".\n    *   **Same Amount?** Yes, both $225.\n    *   **Description:** Identical (\"PRIVACY-ANIMAL SERVICES\").\n    *   **Department:** Identical (\"ANIMAL SERVICES\").\n    *   **Vendor:** Identical (\"PRIVACY-ANIMAL SERVICES\").\n\n3.  **Investigate the Variants (Reasoning for Signal):**\n    *   The signal is `invoice_variant`. This usually means the invoice numbers differ by a small digit (e.g., 131 vs 132, 124 vs 125).\n    *   Here: Invoice 1 is `062410006OO132`. Invoice 2 is `062410006OO131`.\n    *   PO numbers differ: `GAEAE06AE24000036M` vs `GAEAE06AE24000034M`.\n    *   Dates differ: 2024-06-02 vs 2024-05-12.\n    *   Dates are interesting. May 12 and June 02. They are a month apart.\n    *   Could this be **Progress Payment**?\n        *   We don't see the text \"Progress payment\" in the description provided.\n    *   Could this be **Recurring**?\n        *   Usually monthly. Same vendor, same amount ($225). Dates are 2 months apart (May and June).\n        *   Invoice numbers differ by the last digit (131 vs 132).\n        *   PO numbers differ slightly.\n    *   Could this be **Line Split**?\n        *   Line counts are 1. No evidence of split.\n\n4.  **Focusing on the Recurring Theory:**\n    *   Vendor: Privacy Animal Services.\n    *   Amount: $225.\n    *   Period: Monthly recurring payment (likely for a facility fee, subscription, or similar).\n    *   Dates: May 12 and June 02. This is consistent with a recurring monthly fee.\n    *   Invoice numbers follow a pattern `OO131`, `OO132`.\n    *   Since there are multiple payments in the cycle (different invoice numbers for the same recurring amount), the description does not change, the amounts are the same, but the dates/POs differ.\n\n5.  **Decision Matrix:**\n    *   Is it a duplicate? Technically, two separate invoices paid twice. But in an AP context, for a recurring vendor, these are usually treated as one series of payments rather than a recoverable duplicate error.\n    *   Explanation Types:\n        *   `recurring`: Fits perfectly. Monthly cadence, same vendor/amount.\n        *   `different_po`: Could be, but recurring is a better explanation for the specific dates and invoice number variants.\n        *   `progress_payment`: No evidence in text.\n    *   Verdict: Dismiss.\n    *   Explanation Type: `recurring`.\n\n6.  **Constructing the JSON Response:**\n    *   `candidate_id`: \"invoice_variant:AD26240000121175:AD26240000121184\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"recurring\"\n    *   `reasoning`: \"Matches vendor Privacy Animal Services. Amount $225 and dates (May 12 and June 02) indicate a recurring monthly payment schedule.\"\n    *   `evidence`:\n        *   {field: \"vendor_name\", values: [\"PRIVACY-ANIMAL SERVICES\"]}\n        *   {field: \"amount\", values: [\"225\"]}\n        *   {field: \"invoice_date\", values: [\"2024-05-12\", \"2024-06-02\"]}\n    *   `confidence`: 0.9. The dates align closely (May/June cycle) and the invoice numbers suggest sequential increments typical of billing variants for recurring services.\n\n7.  **Final check of constraints:**\n    *   No markdown.\n    *   No commentary outside JSON.\n    *   Keys: candidate_id, verdict, explanation_type, reasoning, evidence, confidence.\n\n8.  **Refining reasoning:** The prompt emphasizes \"If you can name a matching explanation, dismiss\". The \"recurring\" explanation covers the same vendor, same amount, monthly dates, and differing invoice numbers.\n\n    *   JSON Construction:\n        ```json\n        {\n          \"candidate_id\": \"invoice_variant:AD26240000121175:AD26240000121184\",\n          \"verdict\": \"dismiss\",\n          \"explanation_type\": \"recurring\",\n          \"reasoning\": \"Recurring monthly payment for Privacy Animal Services. Consistent amount ($225) and dates (May and June) suggest a subscription or regular contract fee.\",\n          \"evidence\": [\n            {\n              \"field\": \"vendor_name\",\n              \"values\": [\n                \"PRIVACY-ANIMAL SERVICES\"\n              ]\n            },\n            {\n              \"field\": \"amount\",\n              \"values\": [\n                \"225\"\n              ]\n            },\n            {\n              \"field\": \"invoice_date\",\n              \"values\": [\n                \"2024-05-12\",\n                \"2024-06-02\"\n              ]\n            }\n          ],\n          \"confidence\": 0.9\n        }\n        ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686037,
+    "id": "chatcmpl-8041b2da-ac39-4b61-8b7a-736af98e24e1",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1501,
+      "prompt_tokens": 942,
+      "prompt_tokens_details": null,
+      "total_tokens": 2443
+    }
+  }
+}

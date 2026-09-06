@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"975.96\",\"candidate_id\":\"invoice_variant:EVAL00000219:EVAL00000224\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000219\",\"EVAL00000224\"]},\"related\":[],\"transactions\":[{\"amount\":\"975.96\",\"department\":\"GENERAL SERVICES\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"975.96\"],\"invoice_amount\":\"975.96\",\"invoice_canonical\":\"EVL00079M1\",\"invoice_date\":\"2018-01-15\",\"invoice_number_raw\":\"EVL00079M1\",\"line_count\":1,\"payment_date\":\"2018-01-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE40AE24400102M\",\"transaction_id\":\"EVAL00000219\",\"vendor_canonical\":\"DANIELSTIRESERVICE\",\"vendor_id\":\"VC0000052086\",\"vendor_name_raw\":\"DANIELS TIRE SERVICE, INC.\"},{\"amount\":\"975.96\",\"department\":\"GENERAL SERVICES\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"975.96\"],\"invoice_amount\":\"975.96\",\"invoice_canonical\":\"EVL00079M6\",\"invoice_date\":\"2018-06-15\",\"invoice_number_raw\":\"EVL00079M6\",\"line_count\":1,\"payment_date\":\"2018-06-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE40AE24400102M\",\"transaction_id\":\"EVAL00000224\",\"vendor_canonical\":\"DANIELSTIRESERVICE\",\"vendor_id\":\"VC0000052086\",\"vendor_name_raw\":\"DANIELS TIRE SERVICE, INC.\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000219:EVAL00000224\",\"verdict\":\"dismiss\",\"explanation_type\":\"recurring\",\"reasoning\":\"Same vendor, same amount ($975.96), same day of month (15th) recurring monthly payment for professional services\",\"evidence\":[{\"field\":\"amount\",\"values\":[\"975.96\",\"975.96\"]},{\"field\":\"vendor_name_raw\",\"values\":[\"DANIELS TIRE SERVICE, INC.\",\"DANIELS TIRE SERVICE, INC.\"]},{\"field\":\"payment_date\",\"values\":[\"2018-01-15\",\"2018-06-15\"]},{\"field\":\"description\",\"values\":[\"Professional services\",\"Professional services\"]},{\"field\":\"po_number\",\"values\":[\"GAEAE40AE24400102M\",\"GAEAE40AE24400102M\"]},{\"field\":\"invoice_canonical\",\"values\":[\"EVL00079M1\",\"EVL00079M6\"]},{\"field\":\"line_count\",\"values\":[\"1\",\"1\"]}],\"confidence\":0.95}",
+          "function_call": null,
+          "reasoning": "Let me analyze this candidate duplicate-payment pair.\n\nCandidate Details:\n- candidate_id: \"invoice_variant:EVAL00000219:EVAL00000224\"\n- Signal: invoice_variant\n- Stage: blocking\n- Two transactions:\n  1. EVAL00000219: $975.96, paid 2018-01-15\n  2. EVAL00000224: $975.96, paid 2018-06-15\n- Both from DANIELS TIRE SERVICE, INC.\n- Both professional services, general services department\n- Different invoice numbers: EVL00079M1 vs EVL00079M6\n- Both paid on the same day as invoice date (15th of month)\n- Both the same amount: $975.96\n- Both on PO: GAEAE40AE24400102M\n- Both payments are PAID status\n\nThis looks like a recurring payment situation. The same amount ($975.96) paid for \"Professional services\" from the same vendor on the same day of the month (15th of Jan and June). This is a classic monthly recurring payment pattern.\n\nExplanation Type: recurring\n\nHowever, I need to be careful. Let me think about this more:\n- Two different invoices (EVL00079M1 and EVL00079M6)\n- Same amount\n- Same vendor\n- Same department\n- Same PO number\n- Paid on same day of month in different months\n\nThe PO number is the same for both, which suggests they might be related orders. Let me look more carefully at the invoice numbers:\n- EVL00079M1 - invoice number ending in M1 (maybe Month 1?)\n- EVL00079M6 - invoice number ending in M6 (maybe Month 6?)\n\nWait, looking at EVL00079M1 and EVL00079M6... these look like invoice numbers where the last digit might indicate a month:\n- M1 could be January (month 1)\n- M6 could be June (month 6)\n\nAnd the dates confirm this:\n- 2018-01-15 is January 15\n- 2018-06-15 is June 15\n\nThis is clearly a recurring monthly payment arrangement. The system generates invoice numbers with a month indicator. Both payments are PAID, so the work has been done and paid for.\n\nThis is a legitimate recurring payment, so I should dismiss the candidate with explanation_type \"recurring\".",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686924,
+    "id": "chatcmpl-839e233a-7579-4a43-b5ed-0e10642a74d0",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 726,
+      "prompt_tokens": 939,
+      "prompt_tokens_details": null,
+      "total_tokens": 1665
+    }
+  }
+}

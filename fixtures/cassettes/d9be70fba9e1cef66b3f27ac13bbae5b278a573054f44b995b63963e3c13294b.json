@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"443.35\",\"candidate_id\":\"exact_duplicate:EVAL00000095:EVAL00000096\",\"signal\":\"exact_duplicate\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000095\",\"EVAL00000096\"]},\"related\":[],\"transactions\":[{\"amount\":\"443.35\",\"department\":\"GENERAL SERVICES\",\"description\":\"Invoice as billed\",\"distinct_line_amounts\":[\"443.35\"],\"invoice_amount\":\"443.35\",\"invoice_canonical\":\"EVL00048\",\"invoice_date\":\"2019-04-21\",\"invoice_number_raw\":\"EVL00048\",\"line_count\":1,\"payment_date\":\"2019-04-21\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000485881\",\"transaction_id\":\"EVAL00000095\",\"vendor_canonical\":\"RUSHTRUCKCENTEROFCA\",\"vendor_id\":\"000035489\",\"vendor_name_raw\":\"RUSH TRUCK CENTER OF CA INC\"},{\"amount\":\"443.35\",\"department\":\"GENERAL SERVICES\",\"description\":\"Cancelled by issuer, do not remit\",\"distinct_line_amounts\":[\"443.35\"],\"invoice_amount\":\"443.35\",\"invoice_canonical\":\"EVL00048\",\"invoice_date\":\"2019-04-21\",\"invoice_number_raw\":\"EVL00048\",\"line_count\":1,\"payment_date\":\"2019-04-21\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000485881\",\"transaction_id\":\"EVAL00000096\",\"vendor_canonical\":\"RUSHTRUCKCENTEROFCA\",\"vendor_id\":\"000035489\",\"vendor_name_raw\":\"RUSH TRUCK CENTER OF CA INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"exact_duplicate:EVAL00000095:EVAL00000096\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"cancelled\",\n  \"reasoning\": \"The second payment description explicitly states 'Cancelled by issuer, do not remit'.\",\n  \"evidence\": [\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Cancelled by issuer, do not remit\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"443.35\",\n        \"443.35\"\n      ]\n    }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Candidate:**\n    *   **candidate_id:** exact_duplicate:EVAL00000095:EVAL00000096\n    *   **signal:** exact_duplicate (Flagged by system)\n    *   **amount_at_risk:** 443.35\n    *   **transaction_ids:** EVAL00000095, EVAL00000096\n    *   **related:** [] (No related rows provided to explain pattern)\n\n2.  **Analyze Transactions:**\n    *   **Row 1 (EVAL00000095):**\n        *   Status: PAID\n        *   Amount: 443.35\n        *   Vendor: RUSH TRUCK CENTER OF CA INC\n        *   Invoice: EVL00048\n        *   Description: \"Invoice as billed\"\n        *   PO: CPO40240000485881\n    *   **Row 2 (EVAL00000096):**\n        *   Status: PAID\n        *   Amount: 443.35\n        *   Vendor: RUSH TRUCK CENTER OF CA INC\n        *   Invoice: EVL00048\n        *   Description: \"Cancelled by issuer, do not remit\"\n\n3.  **Compare Transactions:**\n    *   Amounts: Equal (443.35).\n    *   Vendor: Match.\n    *   Invoice: Match (EVL00048).\n    *   PO: Match (CPO40240000485881).\n    *   Invoice Date: Match (2019-04-21).\n    *   Payment Date: Match (2019-04-21).\n\n4.  **Evaluate Explanation Types:**\n    *   *cancelled?* One row explicitly says \"Cancelled by issuer\". Even though both show PAID status in the payload (which might be a data artifact of a reversal posting that hasn't fully settled to VOID in this specific mock data representation, or both were issued but one was voided), the description clearly indicates it is a cancellation. The prompt says \"Status may be absent; the description... can be the only tell.\" The description \"Cancelled by issuer, do not remit\" is a definitive indicator.\n    *   *line_split?* No, distinct line amounts are the same. Not a split.\n    *   *progress_payment?* No, description doesn't indicate draws.\n    *   *recurring?* No, dates match exactly, just two payments for the same invoice.\n    *   *different_po?* PO numbers match.\n    *   *partial_pair?* No, looks like a duplicate.\n\n5.  **Formulate Verdict:**\n    *   Explanation is clear: \"Cancelled by issuer\".\n    *   Therefore: Dismiss.\n\n6.  **Construct JSON Object:**\n    *   **candidate_id:** exact_duplicate:EVAL00000095:EVAL00000096\n    *   **verdict:** dismiss\n    *   **explanation_type:** cancelled\n    *   **reasoning:** The second payment describes itself as \"Cancelled by issuer\".\n    *   **evidence:**\n        *   {\"field\": \"description\", \"values\": [\"Cancelled by issuer, do not remit\"]}\n        *   {\"field\": \"amount\", \"values\": [\"443.35\", \"443.35\"]}\n    *   **confidence:** 1.0 (It's explicitly stated in the description).",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788679143,
+    "id": "chatcmpl-52803593-f9e6-4330-bf09-fd88ff8e392d",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 854,
+      "prompt_tokens": 932,
+      "prompt_tokens_details": null,
+      "total_tokens": 1786
+    }
+  }
+}

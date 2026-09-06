@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"17.17\",\"candidate_id\":\"overpayment_vs_invoice:EVAL00000119:EVAL00000120\",\"signal\":\"overpayment_vs_invoice\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000119\",\"EVAL00000120\"]},\"related\":[],\"transactions\":[{\"amount\":\"7.36\",\"department\":\"FIRE\",\"description\":\"GL distribution line 1 of 2\",\"distinct_line_amounts\":[\"7.36\"],\"invoice_amount\":\"7.36\",\"invoice_canonical\":\"EVL00060\",\"invoice_date\":\"2019-05-03\",\"invoice_number_raw\":\"EVL00060\",\"line_count\":1,\"payment_date\":\"2019-05-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000493260\",\"transaction_id\":\"EVAL00000119\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"},{\"amount\":\"17.17\",\"department\":\"FIRE\",\"description\":\"GL distribution line 2 of 2\",\"distinct_line_amounts\":[\"17.17\"],\"invoice_amount\":\"17.17\",\"invoice_canonical\":\"EVL00060\",\"invoice_date\":\"2019-05-03\",\"invoice_number_raw\":\"EVL00060\",\"line_count\":1,\"payment_date\":\"2019-05-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000493260\",\"transaction_id\":\"EVAL00000120\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\": \"overpayment_vs_invoice:EVAL00000119:EVAL00000120\", \"verdict\": \"dismiss\", \"explanation_type\": \"line_split\", \"reasoning\": \"Transactions describe GL distribution lines (1 of 2 and 2 of 2) for the same invoice, indicating a split payment, not a duplicate overpayment.\", \"evidence\": [{\"field\": \"description\", \"values\": [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]}, {\"field\": \"invoice_canonical\", \"values\": [\"EVL00060\"]}, {\"field\": \"invoice_amount\", \"values\": [\"7.36\", \"17.17\"]}], \"confidence\": 1}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate:** `overpayment_vs_invoice:EVAL00000119:EVAL00000120`\n    *   **Signal:** `overpayment_vs_invoice` (This usually means Amount A + Amount B > 0 or Amount A > Invoice Amount, implying a double payment).\n    *   **Amount at Risk:** `17.17`.\n    *   **Transactions:**\n        *   Tx1 (`EVAL00000119`): `7.36`, Paid, Check, Fire Dept, \"GL distribution line 1 of 2\", Invoice `EVL00060`, Date `2019-05-03`.\n        *   Tx2 (`EVAL00000120`): `17.17`, Paid, Check, Fire Dept, \"GL distribution line 2 of 2\", Invoice `EVL00060`, Date `2019-05-03`.\n    *   **Related:** None.\n\n2.  **Evaluate for Duplicates/Falseness:**\n    *   The transactions are clearly related to the *same* invoice (`EVL00060`).\n    *   The description of Tx1 is \"GL distribution line 1 of 2\".\n    *   The description of Tx2 is \"GL distribution line 2 of 2\".\n    *   The `line_count` for Tx1 is 1.\n    *   The `line_count` for Tx2 is 1.\n    *   The `distinct_line_amounts` for Tx1 is `[\"7.36\"]`.\n    *   The `distinct_line_amounts` for Tx2 is `[\"17.17\"]`.\n\n3.  **Determine the Classification:**\n    *   These are *not* two separate payments to the vendor. These are two separate checks (or transactions) that make up a single invoice payment.\n    *   This corresponds to the \"line_split\" or \"partial_pair\" explanation types in the schema.\n    *   The prompt mentions: \"`line_split`: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\"\n    *   This fits perfectly. One payment clears part of the GL (or constitutes a partial split of the payment to cover two distinct lines on the invoice), and the second clears the remainder. Here, it's literally \"line 1 of 2\" and \"line 2 of 2\".\n    *   Therefore, the signal \"overpayment\" is a false positive because the sum of 7.36 + 17.17 is exactly the invoice amount of 7.36 + 17.17 = 24.53, or simply that the rows represent the full settlement of the invoice via split lines.\n\n4.  **Construct the JSON Output:**\n    *   `candidate_id`: \"overpayment_vs_invoice:EVAL00000119:EVAL00000120\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"line_split\"\n    *   `reasoning`: \"The transactions are GL distribution lines (1 of 2 and 2 of 2) for the same invoice (EVL00060), not separate payments.\"\n    *   `evidence`:\n        *   `{\"field\": \"description\", \"values\": [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]}`\n        *   `{\"field\": \"invoice_canonical\", \"values\": [\"EVL00060\"]}`\n        *   `{\"field\": \"invoice_amount\", \"values\": [\"7.36\", \"17.17\"]}` (Wait, usually evidence shows the contrast. Let's show the fields that differ to justify the split.)\n        *   `{\"field\": \"line_count\", \"values\": [\"1\"]}` (Both have line_count 1, showing they are distinct transactions, but descriptions confirm the split).\n    *   `confidence`: High. The descriptions explicitly state \"1 of 2\" and \"2 of 2\".\n\n5.  **Refine Output:**\n    *   `candidate_id`: overpayment_vs_invoice:EVAL00000119:EVAL00000120\n    *   `verdict`: dismiss\n    *   `explanation_type`: line_split\n    *   `reasoning`: The rows describe \"GL distribution line 1 of 2\" and \"2 of 2\" for the same invoice and PO, indicating they are parts of one payment split across lines rather than a duplicate overpayment.\n    *   `evidence`:\n        *   `[{\"field\": \"description\", \"values\": [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]}, {\"field\": \"invoice_canonical\", \"values\": [\"EVL00060\"]}, {\"field\": \"invoice_amount\", \"values\": [\"7.36\", \"17.17\"]}]`\n    *   `confidence`: 1.0\n\n    *Self-Correction on confidence:* The prompt says \"If you are unsure, lower it.\" I am very sure.\n\n6.  **Final JSON Assembly:**\n    ```json\n    {\n      \"candidate_id\": \"overpayment_vs_invoice:EVAL00000119:EVAL00000120\",\n      \"verdict\": \"dismiss\",\n      \"explanation_type\": \"line_split\",\n      \"reasoning\": \"Transactions are GL distribution lines (1 of 2 and 2 of 2) for the same invoice, indicating a split of one payment, not a duplicate overpayment.\",\n      \"evidence\": [\n        {\"field\": \"description\", \"values\": [\"GL distribution line 1 of 2\", \"GL distribution line 2 of 2\"]},\n        {\"field\": \"invoice_canonical\", \"values\": [\"EVL00060\"]},\n        {\"field\": \"invoice_amount\", \"values\": [\"7.36\", \"17.17\"]}\n      ],\n      \"confidence\": 1\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788687277,
+    "id": "chatcmpl-23eb2cff-34bf-4002-b78b-0f8b630a4169",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1392,
+      "prompt_tokens": 932,
+      "prompt_tokens_details": null,
+      "total_tokens": 2324
+    }
+  }
+}

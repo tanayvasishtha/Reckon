@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"1563.22\",\"candidate_id\":\"invoice_variant:EVAL00000154:EVAL00000155\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000154\",\"EVAL00000155\"]},\"related\":[],\"transactions\":[{\"amount\":\"1563.22\",\"department\":\"ECONOMIC AND WORKFORCE DEVELOPMENT DEPARTMENT\",\"description\":\"Progress payment 4 of 5\",\"distinct_line_amounts\":[\"1563.22\"],\"invoice_amount\":\"1563.22\",\"invoice_canonical\":\"EVL00067D4\",\"invoice_date\":\"2019-07-05\",\"invoice_number_raw\":\"EVL00067D4\",\"line_count\":1,\"payment_date\":\"2019-07-05\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC22CO24143725Y\",\"transaction_id\":\"EVAL00000154\",\"vendor_canonical\":\"MANAGEDCAREERSOLUTIONS\",\"vendor_id\":\"100019892\",\"vendor_name_raw\":\"MANAGED CAREER SOLUTIONS INC\"},{\"amount\":\"1563.22\",\"department\":\"ECONOMIC AND WORKFORCE DEVELOPMENT DEPARTMENT\",\"description\":\"Progress payment 5 of 5\",\"distinct_line_amounts\":[\"1563.22\"],\"invoice_amount\":\"1563.22\",\"invoice_canonical\":\"EVL00067D5\",\"invoice_date\":\"2019-07-19\",\"invoice_number_raw\":\"EVL00067D5\",\"line_count\":1,\"payment_date\":\"2019-07-19\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC22CO24143725Y\",\"transaction_id\":\"EVAL00000155\",\"vendor_canonical\":\"MANAGEDCAREERSOLUTIONS\",\"vendor_id\":\"100019892\",\"vendor_name_raw\":\"MANAGED CAREER SOLUTIONS INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000154:EVAL00000155\",\"verdict\":\"dismiss\",\"explanation_type\":\"progress_payment\",\"reasoning\":\"Both payments are contract draws on the same PO (SC22CO24143725Y) with descriptions specifying stage 4 and 5 of the draw schedule.\",\"evidence\":[{\"field\":\"description\",\"values\":[\"Progress payment 4 of 5\",\"Progress payment 5 of 5\"]},{\"field\":\"po_number\",\"values\":[\"SC22CO24143725Y\",\"SC22CO24143725Y\"]},{\"field\":\"amount\",\"values\":[\"1563.22\",\"1563.22\"]}],\"confidence\":0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Stage 5 adjudicator for accounts payable duplicate payments.\n    *   **Goal:** Kill candidates (resolve false positives), do not raise them.\n    *   **Primary Constraint:** False positives are worse than misses.\n    *   **Output Format:** Single JSON object, no markdown, no commentary.\n\n2.  **Analyze the Input Data:**\n    *   `candidate_id`: `invoice_variant:EVAL00000154:EVAL00000155`\n    *   `amount_at_risk`: `1563.22`\n    *   `transactions`:\n        *   `EVAL00000154`: \"Progress payment 4 of 5\", `po_number`: \"SC22CO24143725Y\", `invoice_date`: \"2019-07-05\".\n        *   `EVAL00000155`: \"Progress payment 5 of 5\", `po_number`: \"SC22CO24143725Y\", `invoice_date`: \"2019-07-19\".\n    *   `related`: `[]` (No other transactions provided).\n\n3.  **Evaluate for Duplicate:**\n    *   The signal is `invoice_variant` (likely because of canonical identifiers EVL00067D4 vs EVL00067D5, or slight differences).\n    *   Vendor: Same (\"MANAGED CAREER SOLUTIONS INC\").\n    *   PO: Same (\"SC22CO24143725Y\").\n    *   Amount: Same (\"1563.22\").\n    *   Dates: 2019-07-05 vs 2019-07-19.\n    *   Description: \"Progress payment 4 of 5\" vs \"Progress payment 5 of 5\".\n\n4.  **Apply Rules to Find a Legitimate Explanation:**\n    *   Is it `cancelled`? No, status is PAID.\n    *   Is it `line_split`? No, distributions look standard for payments (1 line each).\n    *   Is it `progress_payment`? **YES**. The descriptions explicitly state \"Progress payment 4 of 5\" and \"Progress payment 5 of 5\". They share the same PO number and amount. This represents a staged contract draw.\n    *   Is it `recurring`? No, recurring usually implies fixed cadence like \"Monthly\". This is a specific draw of a contract.\n    *   Is it `different_po`? No, PO numbers match exactly (or are extensions of each other, appearing identical in this context).\n    *   Is it `partial_pair`? No, these aren't partial payments of a single invoice; they are two parts of a 5-part payment schedule.\n\n5.  **Formulate the Verdict:**\n    *   `verdict`: \"dismiss\" (found a legitimate explanation).\n    *   `explanation_type`: \"progress_payment\".\n\n6.  **Draft the Reasoning and Evidence:**\n    *   `reasoning`: Two payments on the same PO representing stages 4 and 5 of a contract draw schedule.\n    *   `evidence`: Fields showing same PO number, explicit descriptions of payment progress, matching amounts, and same department/vendor.\n        *   Field: \"description\" -> Values: [\"Progress payment 4 of 5\", \"Progress payment 5 of 5\"]\n        *   Field: \"po_number\" -> Values: [\"SC22CO24143725Y\", \"SC22CO24143725Y\"]\n        *   Field: \"amount\" -> Values: [\"1563.22\", \"1563.22\"]\n\n7.  **Determine Confidence:**\n    *   This is very clear-cut based on the descriptions. Confidence should be high. 0.95.\n\n8.  **Final JSON Construction:**\n    *   Check keys: `candidate_id`, `verdict`, `explanation_type`, `reasoning`, `evidence`, `confidence`.\n    *   Check types/values: string, enum, string, array, number.\n\n9.  **Review Constraints:**\n    *   No markdown.\n    *   No commentary.\n    *   Decimal comparison (not relevant for strict equality here, both are same string).\n\n    *Draft JSON:*\n    ```json\n    {\n      \"candidate_id\": \"invoice_variant:EVAL00000154:EVAL00000155\",\n      \"verdict\": \"dismiss\",\n      \"explanation_type\": \"progress_payment\",\n      \"reasoning\": \"Both transactions are contract draws on PO SC22CO24143725Y. Descriptions 'Progress payment 4 of 5' and 'Progress payment 5 of 5' confirm a scheduled partial fulfillment.\",\n      \"evidence\": [\n        {\n          \"field\": \"description\",\n          \"values\": [\n            \"Progress payment 4 of 5\",\n            \"Progress payment 5 of 5\"\n          ]\n        },\n        {\n          \"field\": \"po_number\",\n          \"values\": [\n            \"SC22CO24143725Y\",\n            \"SC22CO24143725Y\"\n          ]\n        },\n        {\n          \"field\": \"amount\",\n          \"values\": [\n            \"1563.22\",\n            \"1563.22\"\n          ]\n        }\n      ],\n      \"confidence\": 0.95\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686381,
+    "id": "chatcmpl-6707493f-c09b-47ae-a7ba-436f0f461e7d",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1263,
+      "prompt_tokens": 957,
+      "prompt_tokens_details": null,
+      "total_tokens": 2220
+    }
+  }
+}

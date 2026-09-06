@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"923.63\",\"candidate_id\":\"invoice_variant:AD26240000114147:AD26240000118168\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000114147\",\"AD26240000118168\"]},\"related\":[],\"transactions\":[{\"amount\":\"923.63\",\"department\":\"FIRE\",\"description\":\"TSI  INCORPORATED QUOTE #20278323\",\"distinct_line_amounts\":[\"75\",\"848.63\"],\"invoice_amount\":null,\"invoice_canonical\":\"38240000065845\",\"invoice_date\":\"2024-04-09\",\"invoice_number_raw\":\"38240000065845\",\"line_count\":2,\"payment_date\":\"2024-06-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"BPO38240000219384\",\"transaction_id\":\"AD26240000114147\",\"vendor_canonical\":\"TSIINCORPORATED\",\"vendor_id\":\"000030255\",\"vendor_name_raw\":\"TSI INCORPORATED\"},{\"amount\":\"923.63\",\"department\":\"FIRE\",\"description\":\"TSI QUOTE #20280330\",\"distinct_line_amounts\":[\"75\",\"848.63\"],\"invoice_amount\":null,\"invoice_canonical\":\"38240000066548\",\"invoice_date\":\"2024-05-17\",\"invoice_number_raw\":\"38240000066548\",\"line_count\":2,\"payment_date\":\"2024-06-11\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"BPO38240000222769\",\"transaction_id\":\"AD26240000118168\",\"vendor_canonical\":\"TSIINCORPORATED\",\"vendor_id\":\"000030255\",\"vendor_name_raw\":\"TSI INCORPORATED\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\": \"invoice_variant:AD26240000114147:AD26240000118168\", \"verdict\": \"dismiss\", \"explanation_type\": \"different_po\", \"reasoning\": \"Two separate quote transactions processed on distinct POs with different invoice numbers.\", \"evidence\": [{\"field\": \"po_number\", \"values\": [\"BPO38240000219384\", \"BPO38240000222769\"]}, {\"field\": \"description\", \"values\": [\"TSI INCORPORATED QUOTE #20278323\", \"TSI QUOTE #20280330\"]}, {\"field\": \"invoice_canonical\", \"values\": [\"38240000065845\", \"38240000066548\"]}], \"confidence\": 0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for accounts payable duplicate payments.\n    *   **Stage:** Stage 5 (post-deterministic filtering).\n    *   **Goal:** Dismiss (kill) candidates, do not raise them.\n    *   **Constraint:** Return a single JSON object. No markdown, no commentary.\n    *   **Criteria:** If a valid explanation exists, use it. If not, escalate. Don't guess.\n    *   **Explanation Types:** cancelled, line_split, progress_payment, recurring, different_po, partial_pair, none.\n    *   **Input Data:**\n        *   Candidate ID: `invoice_variant:AD26240000114147:AD26240000118168`\n        *   Signal: `invoice_variant`\n        *   Risk Amount: $923.63\n        *   Transactions:\n            *   1: $923.63, Date 2024-06-03, Inv #38240000065845, PO BPO38240000219384, Status PAID, Desc \"TSI INCORPORATED QUOTE #20278323\"\n            *   2: $923.63, Date 2024-06-11, Inv #38240000066548, PO BPO38240000222769, Status PAID, Desc \"TSI QUOTE #20280330\"\n        *   Related: None.\n\n2.  **Evaluate the Pair:**\n    *   **Amount:** Both are $923.63.\n    *   **Vendor:** Both are TSI INCORPORATED.\n    *   **Department:** Both are FIRE.\n    *   **Status:** Both are PAID.\n    *   **Dates:** June 3 vs June 11 (7 days apart).\n    *   **Invoice Numbers:** 38240000065845 vs 38240000066548.\n    *   **PO Numbers:** BPO38240000219384 vs BPO38240000222769.\n    *   **Descriptions:** \"TSI INCORPORATED QUOTE #20278323\" vs \"TSI QUOTE #20280330\".\n    *   **Line Amounts:** [\"75\", \"848.63\"] for both.\n\n3.  **Identify the Pattern:**\n    *   The signal is `invoice_variant`, which usually flags on distinct canonical invoice numbers.\n    *   The descriptions mention \"Quote #\". This strongly suggests consulting/quote services rather than one-off invoice payments.\n    *   The PO numbers are close: `BPO38240000219384` vs `BPO38240000222769`. The ends differ.\n    *   The invoice numbers are sequential or close: `65845` vs `66548`.\n    *   **Crucially:** These look like separate quotes for potentially separate scopes of work or separate instances of work, resulting in separate invoice payments.\n    *   Is it `different_po`? Yes, the PO numbers are different. The descriptions are distinct quotes. This is the most likely scenario: Two distinct purchase orders (or quote transactions mapped to POs) processed separately. The signal \"invoice_variant\" tries to catch internal naming discrepancies, but here the invoice numbers and PO numbers are themselves distinct valid IDs for different transaction lines.\n\n4.  **Select Explanation Type:**\n    *   `cancelled`: No, status is PAID for both.\n    *   `line_split`: No, same distinct_line_amounts, 2 lines for both.\n    *   `progress_payment`: No, descriptions say \"Quote\".\n    *   `recurring`: No, dates are 7 days apart, quotes usually aren't monthly recurring checks for fixed quotes.\n    *   `different_po`: Yes. The PO numbers are different (`BPO38240000219384` vs `BPO38240000222769`). The descriptions are different (\"Quote #20278323\" vs \"Quote #20280330\"). This indicates two separate transactions (likely Quote # or Service Order #) processed against two different POs.\n    *   `partial_pair`: No, no indication of remainder.\n\n5.  **Draft Verdict and Reasoning:**\n    *   Verdict: `dismiss`\n    *   Explanation Type: `different_po`\n    *   Reasoning: The two transactions correspond to two separate quotes (#20278323 and #20280330) processed against two different POs (BPO38240000219384 and BPO38240000222769). They represent distinct engagements, not a duplicate.\n    *   Evidence:\n        *   Transaction 1: PO `BPO38240000219384`\n        *   Transaction 2: PO `BPO38240000222769`\n        *   Transaction 1: Desc `TSI INCORPORATED QUOTE #20278323`\n        *   Transaction 2: Desc `TSI QUOTE #20280330`\n    *   Confidence: High. PO numbers are explicitly different.\n\n6.  **Construct JSON:**\n    *   `candidate_id`: \"invoice_variant:AD26240000114147:AD26240000118168\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"different_po\"\n    *   `reasoning`: \"Two separate quote transactions processed on different POs.\"\n    *   `evidence`: [{\"field\": \"po_number\", \"values\": [\"BPO38240000219384\", \"BPO38240000222769\"]}, {\"field\": \"description\", \"values\": [\"TSI INCORPORATED QUOTE #20278323\", \"TSI QUOTE #20280330\"]}]\n    *   `confidence`: 0.95\n\n7.  **Final Review:** Does this match constraints? Yes. No markdown. JSON format. Honest confidence.\n\n    *Self-Correction during drafting:* The invoices are \"Quote #\" meaning these might not technically be invoices in the strict accounting sense (bills), but usually, the system treats them as transactional lines with \"invoice\" fields. The explanation type `different_po` fits best because the system maps these to distinct POs.\n\n    *Refining the Evidence:* Focus on PO numbers since `different_po` is the category. Also include descriptions showing distinct quote numbers.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788679681,
+    "id": "chatcmpl-fa255bca-2412-45a6-ae8c-f6f69cf766e1",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1537,
+      "prompt_tokens": 958,
+      "prompt_tokens_details": null,
+      "total_tokens": 2495
+    }
+  }
+}

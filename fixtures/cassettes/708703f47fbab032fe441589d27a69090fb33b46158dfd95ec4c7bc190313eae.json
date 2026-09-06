@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate duplicate-payment candidates. Reply with ONLY a JSON object with keys: verdict (dismiss|escalate), explanation_type (cancelled|line_split|progress_payment|recurring|different_po|partial_pair|none), reasoning (one sentence), confidence (0 to 1).",
+        "role": "system"
+      },
+      {
+        "content": "Two payments to W W GRAINGER INC, invoice 44821, both 12500.00 USD. First paid 2024-03-06 with PO SC50CO24140149K. Second paid 2024-04-10, no PO. Description on both: Progress payment 2 of 4.",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"progress_payment\",\n  \"reasoning\": \"The payments represent sequential progress payments (2 of 4) for the same invoice, rather than duplicate charges.\",\n  \"confidence\": 0.95\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Vendor:** W W GRAINGER INC\n    *   **Invoice:** 44821\n    *   **Amount:** $12,500.00 USD (identical)\n    *   **Payment Date 1:** 2024-03-06\n    *   **PO 1:** SC50CO24140149K\n    *   **Payment Date 2:** 2024-04-10\n    *   **PO 2:** None\n    *   **Description:** Progress payment 2 of 4 (for both)\n\n2.  **Evaluate for Duplicates:**\n    *   Both payments go to the same vendor.\n    *   The invoice numbers are identical (44821).\n    *   The amounts are identical ($12,500).\n    *   Both are marked as \"Progress payment 2 of 4\".\n\n3.  **Determine the Likely Scenario:**\n    *   The payments represent the same underlying invoice/reference.\n    *   *Line Split:* This is the most likely candidate. Splitting an invoice usually involves making one payment for a portion of the total or multiple payments for the same invoice over time. Here, the descriptions explicitly state \"Progress payment 2 of 4\". This implies the payments are part of a staged billing process (Line item or Progress Split).\n    *   *Progress Payment:* The descriptions strongly support the \"progress payment\" explanation type. The payments are not full invoice payments; they are milestones.\n\n4.  **Assess Verdict (Escalate or Dismiss?):**\n    *   Is this a clear *duplicate* of a single event requiring reversal? No. The context suggests a legitimate multi-stage payment plan.\n    *   Is it a *recurring* error (paying twice for the same line item)? No, the description shows they are sequential (2 of 4).\n    *   *Decision:* Dismiss. This is a legitimate split of an invoice.\n\n5.  **Select Explanation Type:**\n    *   The description \"Progress payment 2 of 4\" fits the `progress_payment` or `line_split` category. Given the specific description text usually embedded in ERP systems, `line_split` (often used for invoice splitting) or `progress_payment` are both strong. I will lean towards `line_split` or `progress_payment`. Let's look at the options provided: `cancelled`, `line_split`, `progress_payment`, `recurring`, `different_po`, `partial_pair`, `none`.\n    *   The text \"Progress payment 2 of 4\" is the key identifier here. It suggests a staged payment of a contract. `progress_payment` fits best. However, `line_split` is also a common bucket for this in systems where it's treated as a line item split. Let's go with `line_split` because the split occurred via payment lines/parts, or `progress_payment`. Actually, `line_split` implies splitting the total into parts, but the description clarifies they are a sequence. `progress_payment` is semantically most accurate. But looking at typical adjudication logic, if it says \"Progress payment 2 of 4\", it's almost certainly a `line_split` or just `progress_payment`. I'll choose `progress_payment` to be specific to the description provided.\n\n6.  **Formulate Reasoning:**\n    *   *Draft:* The payments are sequential progress payments (2 of 4) for the same invoice, not duplicates.\n    *   *Refinement:* The payments are a staged release of funds (2 of 4) under a single contract/invoice.\n\n7.  **Calculate Confidence:**\n    *   0.95 (The specific description \"Progress payment 2 of 4\" makes this very clear).\n\n8.  **Final Output Construction:**\n    *   verdict: dismiss\n    *   explanation_type: progress_payment\n    *   reasoning: The payments constitute sequential progress payments (2 of 4) for the same invoice rather than duplicate transactions.\n    *   confidence: 0.95",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788678287,
+    "id": "chatcmpl-100e79b2-072f-4dc0-8765-594863df7677",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 913,
+      "prompt_tokens": 132,
+      "prompt_tokens_details": null,
+      "total_tokens": 1045
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"78.48\",\"candidate_id\":\"invoice_variant:AD26240000117992:AD26240000121201\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000117992\",\"AD26240000121201\"]},\"related\":[],\"transactions\":[{\"amount\":\"78.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"PRIVACY-BUILDING AND SAFETY\",\"distinct_line_amounts\":[\"2.16\",\"4.32\",\"72\"],\"invoice_amount\":null,\"invoice_canonical\":\"82448R083608\",\"invoice_date\":\"2024-06-05\",\"invoice_number_raw\":\"082448R083608\",\"line_count\":3,\"payment_date\":\"2024-06-11\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000117992\",\"vendor_canonical\":\"PRIVACYBUILDINGSAFETY\",\"vendor_id\":\"PRIVACY-BUILDING AND SAFETY\",\"vendor_name_raw\":\"PRIVACY-BUILDING AND SAFETY\"},{\"amount\":\"78.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"PRIVACY-BUILDING AND SAFETY\",\"distinct_line_amounts\":[\"2.16\",\"4.32\",\"72\"],\"invoice_amount\":null,\"invoice_canonical\":\"82448R083738\",\"invoice_date\":\"2024-06-17\",\"invoice_number_raw\":\"082448R083738\",\"line_count\":3,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000121201\",\"vendor_canonical\":\"PRIVACYBUILDINGSAFETY\",\"vendor_id\":\"PRIVACY-BUILDING AND SAFETY\",\"vendor_name_raw\":\"PRIVACY-BUILDING AND SAFETY\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:AD26240000117992:AD26240000121201\",\"verdict\":\"dismiss\",\"explanation_type\":\"recurring\",\"reasoning\":\"Two identical payments for the same vendor and amount separated by two weeks with different invoice numbers. This pattern strongly suggests a recurring billing cycle rather than a duplicate submission.\",\"evidence\":[{\"field\":\"amount\",\"values\":[\"78.48\",\"78.48\"]},{\"field\":\"vendor_canonical\",\"values\":[\"PRIVACYBUILDINGSAFETY\",\"PRIVACYBUILDINGSAFETY\"]},{\"field\":\"invoice_canonical\",\"values\":[\"82448R083608\",\"82448R083738\"]},{\"field\":\"date\",\"values\":[\"2024-06-05\",\"2024-06-20\"]}],\"confidence\":0.9}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate ID:** `invoice_variant:AD26240000117992:AD26240000121201`\n    *   **Signal:** `invoice_variant` (One record has canonical `82448R083608`, the other `82448R083738`).\n    *   **Amount at Risk:** $78.48\n    *   **Stage:** Blocking (Stage 5).\n    *   **Transactions:**\n        *   T1: `AD26240000117992`, $78.48, PO: null, Date: 2024-06-05, Invoice Raw: `082448R083608`.\n        *   T2: `AD26240000121201`, $78.48, PO: null, Date: 2024-06-20, Invoice Raw: `082448R083738`.\n        *   Match Amounts: Yes ($78.48).\n        *   Match Dates: Close but different (Jun 5 vs Jun 20).\n        *   Match Description/Vendor: Identical.\n        *   Match Lines: Identical distribution (`[\"2.16\",\"4.32\",\"72\"]`).\n    *   **Related Rows:** None.\n\n2.  **Evaluate Explanation Types:**\n\n    *   *cancelled?* Both are PAID. No indication of voiding.\n    *   *line_split?* Distinct line amounts and count are identical. No evidence of a split line between two invoices. Unlikely.\n    *   *progress_payment?* Usually involves descriptions like \"Progress payment 3 of 5\". No such text here.\n    *   *recurring?* Same vendor, same amount, similar dates (15 days apart). This looks like a recurring billing scenario. The invoice numbers differ, which is common in recurring setups (e.g., monthly billing cycle).\n    *   *different_po?* Both have null PO numbers. Can't differentiate POs if they don't exist.\n    *   *partial_pair?* Both are 100% of the amount (amounts match exactly, though line details don't specify the original invoice number, the payload implies the transaction amount matches the candidate amount at risk).\n    *   *none?* If I can't explain it, escalate.\n\n3.  **Formulate Judgment:**\n    *   The transactions are identical in every way except the invoice number and date.\n    *   The invoice number changed from `082448R083608` to `082448R083738`.\n    *   This is a classic \"Recurring Payment\" scenario. A vendor sends a bill, gets paid, and sends a bill again. Since there are no POs and the match is purely transactional, \"recurring\" is the strongest candidate.\n    *   Wait, is there a possibility this is a legitimate duplicate (duplicate submission)?\n    *   If it were a duplicate submission (double paid), it would be suspicious. But the prompt asks to \"kill candidates\" (dismiss) if there is a *matching explanation*.\n    *   \"Recurring\" fits well: Same vendor, same amount, different invoice numbers, dates close together.\n    *   Is there any reason to believe this is a *valid* recurring payment? The dates (June 5 and June 20) suggest a bi-weekly or semi-monthly recurring charge. The dates are distinct. It's not the exact same day (e.g., same day 3 years ago). It is not the same day of the month (5th vs 20th).\n    *   Given the signal is \"invoice_variant\", the system detected the canonical invoices are different. In a recurring model, invoice numbers update.\n    *   Therefore, \"recurring\" is the appropriate explanation to dismiss.\n\n4.  **Drafting the JSON:**\n    *   `candidate_id`: `invoice_variant:AD26240000117992:AD26240000121201`\n    *   `verdict`: `dismiss`\n    *   `explanation_type`: `recurring`\n    *   `reasoning`: Two identical transactions for the same vendor amount separated by two weeks with different invoice numbers; likely a recurring billing cycle.\n    *   `evidence`: `[{\"field\": \"amount\", \"values\": [\"78.48\", \"78.48\"]}, {\"field\": \"vendor_canonical\", \"values\": [\"PRIVACYBUILDINGSAFETY\", \"PRIVACYBUILDINGSAFETY\"]}, {\"field\": \"invoice_canonical\", \"values\": [\"82448R083608\", \"82448R083738\"]}]`\n    *   `confidence`: 0.95. It is very likely recurring, but without POs or full invoice history, I cannot be 100% certain it's not a duplicate error by the vendor.\n\n5.  **Refining Evidence:**\n    *   Fields to highlight: Vendor match, Amount match, Distinct Invoice Canons.\n    *   Values: Keep it concise.\n\n6.  **Final Check:**\n    *   Are there any other possibilities? It could be a partial payment + remainder, but the line amounts and descriptions are identical, which strongly suggests identical invoices paid separately. \"Recurring\" captures this better than \"partial_pair\" (which usually involves line item differences like \"partial\" vs \"balance\"). I'll stick with \"recurring\".\n\n    *   *Self-Correction:* Actually, looking closer at the line items: `[\"2.16\",\"4.32\",\"72\"]`. The sum is $78.48. The invoice numbers are sequential (6608 -> 738). This looks very much like a monthly or semi-monthly charge.\n    *   I will dismiss as \"recurring\".\n\n    *   Confidence: 0.9 is reasonable. It fits the pattern of recurring billing perfectly.\n\n    *   Output format: JSON only.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788682523,
+    "id": "chatcmpl-0e4c83e5-1433-4892-99d2-08ac915d4ef1",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1429,
+      "prompt_tokens": 972,
+      "prompt_tokens_details": null,
+      "total_tokens": 2401
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"168.95\",\"candidate_id\":\"invoice_variant:EVAL00000215:EVAL00000216\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000215\",\"EVAL00000216\"]},\"related\":[],\"transactions\":[{\"amount\":\"168.95\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"168.95\"],\"invoice_amount\":\"168.95\",\"invoice_canonical\":\"EVL00078M3\",\"invoice_date\":\"2018-03-15\",\"invoice_number_raw\":\"EVL00078M3\",\"line_count\":1,\"payment_date\":\"2018-03-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24138838A\",\"transaction_id\":\"EVAL00000215\",\"vendor_canonical\":\"HURRELLCANTRALL\",\"vendor_id\":\"100037751\",\"vendor_name_raw\":\"HURRELL CANTRALL LLP\"},{\"amount\":\"168.95\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"168.95\"],\"invoice_amount\":\"168.95\",\"invoice_canonical\":\"EVL00078M4\",\"invoice_date\":\"2018-04-15\",\"invoice_number_raw\":\"EVL00078M4\",\"line_count\":1,\"payment_date\":\"2018-04-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24138838A\",\"transaction_id\":\"EVAL00000216\",\"vendor_canonical\":\"HURRELLCANTRALL\",\"vendor_id\":\"100037751\",\"vendor_name_raw\":\"HURRELL CANTRALL LLP\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000215:EVAL00000216\",\"verdict\":\"dismiss\",\"explanation_type\":\"progress_payment\",\"reasoning\":\"Both transactions are payments against the same purchase order (SC12CO24138838A) for identical amounts. They represent sequential draws or billings under the same professional services contract.\",\"evidence\":[{\"field\":\"po_number\",\"values\":[\"SC12CO24138838A\"]},{\"field\":\"amount\",\"values\":[\"168.95\",\"168.95\"]},{\"field\":\"payment_status\",\"values\":[\"PAID\",\"PAID\"]},{\"field\":\"vendor_canonical\",\"values\":[\"HURRELLCANTRALL\"]},{\"field\":\"invoice_canonical\",\"values\":[\"EVL00078M3\",\"EVL00078M4\"]},{\"field\":\"payment_date\",\"values\":[\"2018-03-15\",\"2018-04-15\"]}],\"confidence\":0.9}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input**:\n    *   **candidate_id**: `invoice_variant:EVAL00000215:EVAL00000216`\n    *   **amount_at_risk**: `168.95`\n    *   **signal**: `invoice_variant`\n    *   **transactions**:\n        *   `T1` (EVAL00000215): `HURRELL CANTRALL LLP`, PO `SC12CO24138838A`, Date `2018-03-15`, Invoice `EVL00078M3`, Amount `168.95`.\n        *   `T2` (EVAL00000216): `HURRELL CANTRALL LLP`, PO `SC12CO24138838A`, Date `2018-04-15`, Invoice `EVL00078M4`, Amount `168.95`.\n    *   **related**: `[]`\n    *   **Amounts**: Both are 168.95.\n    *   **Description**: Both \"Professional services\".\n    *   **Vendor**: Same.\n    *   **Department**: Same (\"CITY ATTORNEY\").\n    *   **PO Number**: Same (`SC12CO24138838A`).\n\n2.  **Identify the Pattern**:\n    *   Two payments for the same amount ($168.95).\n    *   Same PO number, Department, Description, Vendor, Payment Method (EFT).\n    *   Payment Status: Both `PAID`.\n    *   Dates: One in March (2018-03-15), one in April (2018-04-15).\n    *   Invoice Numbers: `EVL00078M3` vs `EVL00078M4`.\n    *   The PO number suggests this is likely a contract.\n\n3.  **Evaluate Potential Explanations**:\n    *   *Is it a true duplicate?* A true duplicate would usually be for the *same* invoice number or multiple lines of a single invoice. Here, we have two distinct invoice numbers (`EVL00078M3` and `EVL00078M4`) and different dates. They are likely draws under the same contract.\n    *   *Line Split?* Unlikely. Line counts are 1. Distinct line amounts are 168.95. It looks like individual invoices, not a split of one invoice.\n    *   *Partial Pair?* Usually implies partial payment of one invoice. These are separate invoices.\n    *   *Progress Payment?* The PO number implies a contract. The description is \"Professional services\". The dates are a month apart. The amounts are identical. This is a classic \"draw\" scenario under a contract (PO `SC12CO24138838A`). Common for legal firms or consultants.\n    *   *Cancelled?* Statuses are PAID for both.\n    *   *Recurring?* While the cadence is monthly (March/April), usually `recurring` implies a standard \"standing order\" or specific invoice generation cycle rather than distinct individual invoices for specific deliverables or contract draws. However, `progress_payment` fits the \"draws under a contract\" description perfectly given the presence of a PO number and identical periodic amounts.\n\n4.  **Confirm \"Progress Payment\"**:\n    *   The prompt says: \"`progress_payment`: scheduled contract draws. The tell is often a description such as 'Progress payment 3 of 5'. Invoice numbers and dates may differ; both sides can be PAID.\"\n    *   Here: Same PO, same amount, different dates (serial), both paid.\n    *   This fits perfectly.\n\n5.  **Determine Verdict**:\n    *   Since `progress_payment` is identified, the verdict should be **dismiss**.\n\n6.  **Fill JSON Structure**:\n    *   `candidate_id`: `invoice_variant:EVAL00000215:EVAL00000216`\n    *   `verdict`: `dismiss`\n    *   `explanation_type`: `progress_payment`\n    *   `reasoning`: \"Both transactions are payments against the same purchase order (SC12CO24138838A) for identical amounts. They represent sequential draws or billings under the same contract.\"\n    *   `evidence`: `[{\"field\": \"po_number\", \"values\": [\"SC12CO24138838A\"]}, {\"field\": \"amount\", \"values\": [\"168.95\", \"168.95\"]}, {\"field\": \"payment_status\", \"values\": [\"PAID\", \"PAID\"]}, {\"field\": \"vendor_canonical\", \"values\": [\"HURRELLCANTRALL\"]}]`\n    *   `confidence`: `0.9` (High confidence it is a contract draw rather than a genuine double payment, as they are distinct invoices and paid).\n\n7.  **Final Review**:\n    *   Constraints check: No markdown, no commentary. JSON only.\n    *   Keys check: `candidate_id`, `verdict`, `explanation_type`, `reasoning`, `evidence`, `confidence`.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686881,
+    "id": "chatcmpl-9d461caf-49af-4031-9817-2b51cf6aadaf",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1248,
+      "prompt_tokens": 928,
+      "prompt_tokens_details": null,
+      "total_tokens": 2176
+    }
+  }
+}

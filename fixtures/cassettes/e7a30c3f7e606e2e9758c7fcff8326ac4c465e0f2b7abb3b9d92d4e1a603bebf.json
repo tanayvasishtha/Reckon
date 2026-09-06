@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"75\",\"candidate_id\":\"invoice_variant:AD26240000121118:AD26240000121132\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000121118\",\"AD26240000121132\"]},\"related\":[],\"transactions\":[{\"amount\":\"75\",\"department\":\"CANNABIS REGULATION\",\"description\":null,\"distinct_line_amounts\":[\"75\"],\"invoice_amount\":\"75\",\"invoice_canonical\":\"132410013A114\",\"invoice_date\":\"2024-06-14\",\"invoice_number_raw\":\"132410013A114\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE13AE24130008M\",\"transaction_id\":\"AD26240000121118\",\"vendor_canonical\":\"LOSANGELESCOUNTYREGISTRAR\",\"vendor_id\":\"100039050\",\"vendor_name_raw\":\"LOS ANGELES COUNTY REGISTRAR\"},{\"amount\":\"75\",\"department\":\"CANNABIS REGULATION\",\"description\":null,\"distinct_line_amounts\":[\"75\"],\"invoice_amount\":\"75\",\"invoice_canonical\":\"132410013A128\",\"invoice_date\":\"2024-06-14\",\"invoice_number_raw\":\"132410013A128\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE13AE24130008M\",\"transaction_id\":\"AD26240000121132\",\"vendor_canonical\":\"LOSANGELESCOUNTYREGISTRAR\",\"vendor_id\":\"100039050\",\"vendor_name_raw\":\"LOS ANGELES COUNTY REGISTRAR\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:AD26240000121118:AD26240000121132\",\"verdict\":\"escalate\",\"explanation_type\":\"none\",\"reasoning\":\"Same amount (75), same payment date (2024-06-20), same vendor, and same PO number, but different invoice canonicals (132410013A114 vs 132410013A128). Cannot determine if these are partial payments for the same contract or if one is a duplicate. Neither line_split (amounts match per line) nor cancelled (both PAID). Needs human review.\",\"evidence\":[{\"field\":\"amount\",\"values\":[\"75\",\"75\"]},{\"field\":\"payment_date\",\"values\":[\"2024-06-20\",\"2024-06-20\"]},{\"field\":\"payment_status\",\"values\":[\"PAID\",\"PAID\"]},{\"field\":\"po_number\",\"values\":[\"GAEAE13AE24130008M\",\"GAEAE13AE24130008M\"]},{\"field\":\"vendor_canonical\",\"values\":[\"LOSANGELESCOUNTYREGISTRAR\",\"LOSANGELESCOUNTYREGISTRAR\"]}],\"confidence\":0.7}",
+          "function_call": null,
+          "reasoning": "Let's analyze the candidate.\n\nCandidate ID: `invoice_variant:AD26240000121118:AD26240000121132`\nSignal: `invoice_variant`\nAmount at risk: 75\n\nTransaction 1 (AD26240000121118):\n- Amount: 75\n- Invoice canonical: 132410013A114\n- Invoice number raw: 132410013A114\n- Invoice amount: 75\n- Line count: 1\n- Distinct line amounts: [\"75\"]\n- Invoice date: 2024-06-14\n- Payment date: 2024-06-20\n- Payment status: PAID\n- Payment method: CHECK\n- Vendor canonical: LOSANGELESCOUNTYREGISTRAR\n- Vendor ID: 100039050\n- PO number: GAEAE13AE24130008M\n\nTransaction 2 (AD26240000121132):\n- Amount: 75\n- Invoice canonical: 132410013A128\n- Invoice number raw: 132410013A128\n- Invoice amount: 75\n- Line count: 1\n- Distinct line amounts: [\"75\"]\n- Invoice date: 2024-06-14\n- Payment date: 2024-06-20\n- Payment status: PAID\n- Payment method: CHECK\n- Vendor canonical: LOSANGELESCOUNTYREGISTRAR\n- Vendor ID: 100039050\n- PO number: GAEAE13AE24130008M\n\nSimilarities:\n- Same vendor (LOS ANGELES COUNTY REGISTRAR)\n- Same amount (75)\n- Same invoice date (2024-06-14)\n- Same payment date (2024-06-20)\n- Same payment status (PAID)\n- Same payment method (CHECK)\n- Same PO number (GAEAE13AE24130008M)\n\nDifferences:\n- Different invoice canonicals (132410013A114 vs 132410013A128)\n- Different invoice numbers raw (132410013A114 vs 132410013A128)\n- Same distinct line amounts (both have [\"75\"])\n- Same line count (both have 1)\n\nSo this looks like a case where the same payment (75) was processed twice for two different invoices (132410013A114 and 132410013A128). \n\nThe signal \"invoice_variant\" suggests the system detected variations in invoice numbers that might indicate duplicates, but they are actually separate invoices with different canonical values. This appears to be a case of a genuine payment on a short term contract, as indicated by the similar payment dates for both invoices.\n\nI see two distinct invoices from the same vendor with the same payment amount and date, which suggests they are separate transactions for the same underlying work or service, not a duplicate payment. The two transactions have identical payment details\u2014same amount, date, status, and vendor\u2014making it look like a potential duplicate. However, the canonical invoice numbers differ (132410013A114 vs 132410013A128), indicating these are actually two separate records tracking different invoices. Without additional documentation showing the second payment was processed, the most prudent approach is to elevate this to human review to confirm whether both transactions should exist or if one needs to be removed. I'm investigating a payment discrepancy between two invoice entries from the same vendor. The payments were processed on the same date for identical amounts, but originated from different invoices with unique canonical identifiers. I need to determine whether these represent separate legitimate transactions or potential duplicate payments.\n\nThe critical question is whether the second transaction (AD26240000121132) was actually processed as a true second payment, or if it represents a data entry anomaly. The slight invoice number variations suggest they could be related but distinct records.\n\nMy next step is to examine if this relates to a specific contract, recurring billing pattern, or progress payment scenario that might explain these seemingly duplicate entries. I see two invoice transactions with different canonical identifiers but matching details\u2014same amount, payment date, and vendor. The \"invoice_variant\" signal suggests the system flagged this as potentially problematic. I need to determine if these are legitimate separate transactions or a true duplicate.\n\nWithout clear evidence of a progress payment, recurring arrangement, or additional context, I'll treat this cautiously. The pattern points to a genuine partial payment scenario where the same vendor received two distinct payments for related work. The potential payment variation and duplicate claim trigger human review to validate the invoices and confirm whether they represent legitimate partial payments or a data anomaly.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788684591,
+    "id": "chatcmpl-691d6509-ef2b-4647-a7d8-d5bf8a0f57b4",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1202,
+      "prompt_tokens": 940,
+      "prompt_tokens_details": null,
+      "total_tokens": 2142
+    }
+  }
+}

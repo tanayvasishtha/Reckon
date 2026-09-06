@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"12184.77\",\"candidate_id\":\"invoice_variant:EVAL00000137:EVAL00000140\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000137\",\"EVAL00000140\"]},\"related\":[],\"transactions\":[{\"amount\":\"12184.77\",\"department\":\"GENERAL SERVICES\",\"description\":\"Progress payment 2 of 5\",\"distinct_line_amounts\":[\"12184.77\"],\"invoice_amount\":\"12184.77\",\"invoice_canonical\":\"EVL00064D2\",\"invoice_date\":\"2019-06-04\",\"invoice_number_raw\":\"EVL00064D2\",\"line_count\":1,\"payment_date\":\"2019-06-04\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000474258\",\"transaction_id\":\"EVAL00000137\",\"vendor_canonical\":\"EJWARD\",\"vendor_id\":\"000018740\",\"vendor_name_raw\":\"E J WARD INC\"},{\"amount\":\"12184.77\",\"department\":\"GENERAL SERVICES\",\"description\":\"Progress payment 5 of 5\",\"distinct_line_amounts\":[\"12184.77\"],\"invoice_amount\":\"12184.77\",\"invoice_canonical\":\"EVL00064D5\",\"invoice_date\":\"2019-07-16\",\"invoice_number_raw\":\"EVL00064D5\",\"line_count\":1,\"payment_date\":\"2019-07-16\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000474258\",\"transaction_id\":\"EVAL00000140\",\"vendor_canonical\":\"EJWARD\",\"vendor_id\":\"000018740\",\"vendor_name_raw\":\"E J WARD INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:EVAL00000137:EVAL00000140\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"progress_payment\",\n  \"reasoning\": \"Descriptions 'Progress payment 2 of 5' and 'Progress payment 5 of 5' indicate two scheduled draws against the same contract (PO). They are separate progress payments for the same vendor, not a duplicate.\",\n  \"evidence\": [\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Progress payment 2 of 5\",\n        \"Progress payment 5 of 5\"\n      ]\n    },\n    {\n      \"field\": \"po_number\",\n      \"values\": [\n        \"CPO40240000474258\",\n        \"CPO40240000474258\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"12184.77\",\n        \"12184.77\"\n      ]\n    }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Stage 5 Accounts Payable Exception Adjudicator.\n    *   **Goal:** Kill candidates (Dismiss) if there's a legitimate explanation. Escalate (None) if not.\n    *   **Constraint:** No markdown, no commentary, single JSON object.\n    *   **Data:**\n        *   Candidate ID: `invoice_variant:EVAL00000137:EVAL00000140`\n        *   Signal: `invoice_variant` (flagged because of invoice variant similarity, likely looking like a duplicate).\n        *   Transactions:\n            *   Tx 1: `EVAL00000137`, Vendor `EJWARD`, Amount `12184.77`, Date `2019-06-04`, Desc `Progress payment 2 of 5`, PO `CPO40240000474258`.\n            *   Tx 2: `EVAL00000140`, Vendor `EJWARD`, Amount `12184.77`, Date `2019-07-16`, Desc `Progress payment 5 of 5`, PO `CPO40240000474258`.\n        *   Related: Empty.\n\n2.  **Evaluate the Transactions:**\n    *   **Vendor:** Same (`EJWARD`, `000018740`).\n    *   **Amount:** Same (`12184.77`).\n    *   **Purchase Order:** Same (`CPO40240000474258`). Note: The prompt mentions \"different_po\" is a dismissal category, but usually, that's about *different* POs. Here, the PO is identical, suggesting the same contract/project.\n    *   **Dates:** Different (`2019-06-04` vs `2019-07-16`).\n    *   **Descriptions:** Both say `Progress payment X of 5`.\n    *   **Invoice Numbers:** `EVL00064D2` vs `EVL00064D5`. Distinct numbers.\n    *   **Status:** Both `PAID`.\n    *   **Rationale:** The descriptions explicitly state they are progress payments for a contract (specifically \"2 of 5\" and \"5 of 5\"). The amounts match, and the dates are sequential. This is a clear case of a contract with multiple scheduled draws (progress payments).\n\n3.  **Select Explanation Type:**\n    *   `cancelled`: No, neither is cancelled.\n    *   `line_split`: No, distinct line amounts and counts (though small, they are distinct invoices).\n    *   `progress_payment`: Yes. Descriptions indicate stages of a contract.\n    *   `recurring`: No, likely one-off contract (draws), not a monthly subscription based on the context.\n    *   `different_po`: No, same PO.\n    *   `partial_pair`: No, these are both 100% of the invoice amount shown (`invoice_amount` matches `amount`), and they are separate progress steps in a sequence.\n    *   `none`: Only if escalatated.\n\n4.  **Formulate Reasoning:**\n    *   The pair shows \"Progress payment 2 of 5\" and \"Progress payment 5 of 5\" for the same vendor and same PO. This indicates two separate draws scheduled against the same contract, not duplicates of a single payment. The invoices are distinct (`EVL00064D2` vs `EVL00064D5`).\n\n5.  **Construct Evidence:**\n    *   Field: `description`, Values: [\"Progress payment 2 of 5\", \"Progress payment 5 of 5\"]\n    *   Field: `po_number`, Values: [\"CPO40240000474258\", \"CPO40240000474258\"]\n    *   Field: `amount`, Values: [\"12184.77\", \"12184.77\"]\n\n6.  **Determine Verdict:**\n    *   Verdict: \"dismiss\".\n\n7.  **Determine Confidence:**\n    *   High confidence (1.0). The text descriptions are explicit about the contract draw sequence.\n\n8.  **Final JSON Assembly:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000137:EVAL00000140\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"progress_payment\"\n    *   `reasoning`: \"Descriptions explicitly state 'Progress payment 2 of 5' and 'Progress payment 5 of 5'. These are scheduled contract draws against the same PO, not duplicate invoices.\"\n    *   `evidence`: [{\"field\": \"description\", \"values\": [\"Progress payment 2 of 5\", \"Progress payment 5 of 5\"]}, {\"field\": \"po_number\", \"values\": [\"CPO40240000474258\", \"CPO40240000474258\"]}, {\"field\": \"amount\", \"values\": [\"12184.77\", \"12184.77\"]}]\n    *   `confidence`: 1\n\n9.  **Check Constraints:**\n    *   No markdown? Yes.\n    *   No commentary? Yes.\n    *   Keys correct? Yes.\n    *   Values correct? Yes.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686316,
+    "id": "chatcmpl-690d7514-0008-4513-90c1-ab56eee9cc3f",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1327,
+      "prompt_tokens": 929,
+      "prompt_tokens_details": null,
+      "total_tokens": 2256
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"330\",\"candidate_id\":\"invoice_variant:AD26240000119195:AD26240000119201\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000119195\",\"AD26240000119201\"]},\"related\":[],\"transactions\":[{\"amount\":\"330\",\"department\":\"BUILDING AND SAFETY\",\"description\":null,\"distinct_line_amounts\":[\"330\"],\"invoice_amount\":\"330\",\"invoice_canonical\":\"82448R083717\",\"invoice_date\":\"2024-06-11\",\"invoice_number_raw\":\"082448R083717\",\"line_count\":1,\"payment_date\":\"2024-06-13\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000119195\",\"vendor_canonical\":\"STRUCTURALENGINEERSASSNOFSOCALIF\",\"vendor_id\":\"100004598\",\"vendor_name_raw\":\"STRUCTURAL ENGINEERS ASSN OF SO CALIF INC\"},{\"amount\":\"330\",\"department\":\"BUILDING AND SAFETY\",\"description\":null,\"distinct_line_amounts\":[\"330\"],\"invoice_amount\":\"330\",\"invoice_canonical\":\"82448R083723\",\"invoice_date\":\"2024-06-11\",\"invoice_number_raw\":\"082448R083723\",\"line_count\":1,\"payment_date\":\"2024-06-13\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000119201\",\"vendor_canonical\":\"STRUCTURALENGINEERSASSNOFSOCALIF\",\"vendor_id\":\"100004598\",\"vendor_name_raw\":\"STRUCTURAL ENGINEERS ASSN OF SO CALIF INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:AD26240000119195:AD26240000119201\",\n  \"verdict\": \"escalate\",\n  \"explanation_type\": \"none\",\n  \"reasoning\": \"Both transactions are for the exact full amount of 330, paid on the same date (2024-06-13), with no Purchase Order numbers and identical null descriptions. The duplicate canonical invoice numbers (82448R083717 vs 82448R083723) combined with identical line amounts indicate a full payment duplicate rather than a legitimate split or partial.\",\n  \"evidence\": [\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"330\",\n        \"330\"\n      ]\n    },\n    {\n      \"field\": \"payment_date\",\n      \"values\": [\n        \"2024-06-13\",\n        \"2024-06-13\"\n      ]\n    },\n    {\n      \"field\": \"po_number\",\n      \"values\": [\n        \"null\",\n        \"null\"\n      ]\n    }\n  ],\n  \"confidence\": 0.9\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for duplicate-payment pairs.\n    *   **Goal:** Dismiss (if legitimate explanation exists) or Escalate (if recoverable duplicate or cannot explain).\n    *   **Priority:** Don't raise false positives (better to miss than hurt the vendor).\n    *   **Output:** Single JSON object (keys: candidate_id, verdict, explanation_type, reasoning, evidence, confidence).\n    *   **Input Data:**\n        *   `candidate_id`: `invoice_variant:AD26240000119195:AD26240000119201`\n        *   `signal`: `invoice_variant`\n        *   `stage_generated`: `blocking`\n        *   `transactions`:\n            *   T1: ID `AD26240000119195`, Amount 330, Invoice Date 2024-06-11, Payment Date 2024-06-13, Status PAID, PO null.\n            *   T2: ID `AD26240000119201`, Amount 330, Invoice Date 2024-06-11, Payment Date 2024-06-13, Status PAID, PO null.\n        *   `related`: empty.\n    *   **Rules to Apply:** Cancelled, line_split, progress_payment, recurring, different_po, partial_pair, none.\n\n2.  **Compare Transactions:**\n    *   **Vendor:** Same (`STRUCTURALENGINEERSASSNOFSOCALIF`).\n    *   **Amount:** Same (330).\n    *   **Dates:**\n        *   Invoice Dates: Both 2024-06-11.\n        *   Payment Dates: Both 2024-06-13.\n    *   **Invoice Numbers:** `082448R083717` vs `082448R083723`.\n    *   **Status:** Both `PAID`.\n    *   **PO Number:** Both null.\n    *   **Description:** Both null.\n    *   **Line Count:** Both 1 line.\n\n3.  **Evaluate Explanations:**\n    *   *Cancelled?* No. Status is PAID.\n    *   *Line_split?* Amounts are identical (330 vs 330). Line counts are identical (1 vs 1). Not a split.\n    *   *Progress_payment?* No contract or description hints at draws.\n    *   *Recurring?* Usually involves different amounts or distinct series, but with identical dates and descriptions, it looks like a mistake rather than a recurring pattern.\n    *   *Different_PO?* PO numbers are null for both. Not applicable.\n    *   *Partial_pair?* Usually involves different amounts (partial + balance). Here amounts are identical.\n    *   *None?* The pair looks like a recovery candidate (two identical payments for the same amount on the same day).\n\n4.  **Decision Logic:**\n    *   The pair exhibits the classic characteristics of a duplicate payment (Full amount duplicate).\n    *   A *legitimate* explanation is not immediately obvious (no POs, no different descriptions).\n    *   Can I name a matching explanation?\n        *   Is it \"cancelled\"? No.\n        *   Is it \"different_po\"? No POs.\n        *   Is it \"line_split\"? No.\n        *   Is it \"recurring\"? Looks like a duplicate error, not a schedule.\n    *   *Rule check:* \"If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human.\"\n    *   Since I cannot explain it as a legitimate business event (like a split or partial) and it looks recoverable (duplicate full payment), I must escalate.\n\n5.  **Construct JSON:**\n    *   `candidate_id`: `invoice_variant:AD26240000119195:AD26240000119201`\n    *   `verdict`: `escalate`\n    *   `explanation_type`: `none`\n    *   `reasoning`: \"Both transactions are for the full amount of 330, paid on the same date, with no PO numbers and null descriptions. Identical invoices but different canonical numbers suggest a duplicate payment error.\"\n    *   `evidence`: `[{\"field\": \"amount\", \"values\": [\"330\", \"330\"]}, {\"field\": \"payment_date\", \"values\": [\"2024-06-13\", \"2024-06-13\"]}, {\"field\": \"po_number\", \"values\": [\"null\", \"null\"]}]`\n    *   `confidence`: 0.9 (High confidence this is a duplicate/error rather than a distinct business case).",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788683375,
+    "id": "chatcmpl-fa7660ef-6239-4cba-9367-a73c47fbd6de",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1234,
+      "prompt_tokens": 941,
+      "prompt_tokens_details": null,
+      "total_tokens": 2175
+    }
+  }
+}

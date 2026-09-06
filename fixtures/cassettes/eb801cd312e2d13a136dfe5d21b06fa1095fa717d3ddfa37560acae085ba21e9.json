@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"127.33\",\"candidate_id\":\"invoice_variant:EVAL00000201:EVAL00000205\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000201\",\"EVAL00000205\"]},\"related\":[],\"transactions\":[{\"amount\":\"127.33\",\"department\":\"COUNCIL\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"127.33\"],\"invoice_amount\":\"127.33\",\"invoice_canonical\":\"EVL00076M1\",\"invoice_date\":\"2018-01-15\",\"invoice_number_raw\":\"EVL00076M1\",\"line_count\":1,\"payment_date\":\"2018-01-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO28240000490865\",\"transaction_id\":\"EVAL00000201\",\"vendor_canonical\":\"BELTRANRENTSSALES\",\"vendor_id\":\"000041749\",\"vendor_name_raw\":\"BELTRAN RENTS AND SALES INC\"},{\"amount\":\"127.33\",\"department\":\"COUNCIL\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"127.33\"],\"invoice_amount\":\"127.33\",\"invoice_canonical\":\"EVL00076M5\",\"invoice_date\":\"2018-05-15\",\"invoice_number_raw\":\"EVL00076M5\",\"line_count\":1,\"payment_date\":\"2018-05-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO28240000490865\",\"transaction_id\":\"EVAL00000205\",\"vendor_canonical\":\"BELTRANRENTSSALES\",\"vendor_id\":\"000041749\",\"vendor_name_raw\":\"BELTRAN RENTS AND SALES INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:EVAL00000201:EVAL00000205\",\"verdict\":\"dismiss\",\"explanation_type\":\"progress_payment\",\"reasoning\":\"Identical Purchase Order number suggests two draws on the same contract. Invoice numbers M1 and M5 are sequential. Dates Jan 15 and May 15 are separated by 4 months, consistent with contract milestones.\",\"evidence\":[{\"field\":\"po_number\",\"values\":[\"CPO28240000490865\",\"CPO28240000490865\"]},{\"field\":\"invoice_number_raw\",\"values\":[\"EVL00076M1\",\"EVL00076M5\"]},{\"field\":\"amount\",\"values\":[\"127.33\",\"127.33\"]}],\"confidence\":0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Accounts Payable Duplicate Adjudicator (Stage 5).\n    *   **Goal:** Kill candidates (dismiss) if a legitimate explanation exists. Escalate if unsure or if it looks like a recoverable duplicate.\n    *   **Constraint:** \"If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate.\"\n    *   **Output Format:** Single JSON object, no markdown, no commentary.\n    *   **Key Fields:** `candidate_id`, `verdict`, `explanation_type`, `reasoning`, `evidence`, `confidence`.\n\n2.  **Analyze the Data:**\n    *   **Candidate ID:** `invoice_variant:EVAL00000201:EVAL00000205`\n    *   **Signal:** `invoice_variant`\n    *   **Transaction 1 (EVAL00000201):**\n        *   Amount: 127.33\n        *   Date: 2018-01-15\n        *   Invoice: EVL00076M1\n        *   PO: CPO28240000490865\n        *   Status: PAID\n    *   **Transaction 2 (EVAL00000205):**\n        *   Amount: 127.33\n        *   Date: 2018-05-15\n        *   Invoice: EVL00076M5\n        *   PO: CPO28240000490865\n        *   Status: PAID\n\n3.  **Compare Transactions:**\n    *   *Amount:* Both are 127.33. Matches.\n    *   *Vendor:* Both are BELTRAN RENTS AND SALES INC.\n    *   *PO:* Both are CPO28240000490865. Matches.\n    *   *Description:* Both are \"Professional services\".\n    *   *Date:* Jan 15 vs May 15 (4 months apart).\n    *   *Invoice Number:* M1 vs M5.\n    *   *Status:* Both PAID.\n\n4.  **Determine Explanation Types:**\n    *   *cancelled:* No, status is PAID.\n    *   *line_split:* No, line counts are 1.\n    *   *progress_payment:* This is the strongest candidate. The PO numbers are identical. The vendor is the same. The amounts are identical. The invoice numbers are sequential (M1, M5), and the dates are sequential (Jan, May). This strongly suggests draw payments on a single contract represented by a PO.\n    *   *recurring:* Possible, but usually monthly/quarterly. 4 months is a gap, but could be budget timing.\n    *   *different_po:* No, PO is identical.\n    *   *partial_pair:* No, both are full amounts and equal.\n    *   *none:* Only if escalated.\n\n5.  **Evaluate \"Progress Payment\" vs \"Recurring\":**\n    *   The identical PO number is the smoking gun. In AP, a single PO is rarely used for identical monthly recurring bills over different invoice numbers unless they are specific contract draws.\n    *   \"Progress payment\" fits the logic: Multiple invoices against the same PO for the same service.\n    *   Explanation Type: \"progress_payment\".\n\n6.  **Draft the JSON:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000201:EVAL00000205\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"progress_payment\"\n    *   `reasoning`: \"Identical PO number and vendor. Invoice numbers M1 and M5 are sequential. Amounts match. Likely contract draw payments.\"\n    *   `evidence`:\n        *   `po_number`: [\"CPO28240000490865\", \"CPO28240000490865\"]\n        *   `invoice_number_raw`: [\"EVL00076M1\", \"EVL00076M5\"]\n        *   `amount`: [\"127.33\", \"127.33\"]\n    *   `confidence`: 0.95 (High due to identical PO and matching sequential invoice numbers).\n\n7.  **Final Review:**\n    *   Is the amount correct? Yes.\n    *   Is PO identical? Yes.\n    *   Does it fit the definitions? Yes, \"The tell is often a description... but Invoice numbers and dates may differ; both sides can be PAID.\"\n    *   Verdict is \"dismiss\". Explanation is \"progress_payment\".\n\n8.  **Construct Output:**\n    ```json\n    {\n      \"candidate_id\": \"invoice_variant:EVAL00000201:EVAL00000205\",\n      \"verdict\": \"dismiss\",\n      \"explanation_type\": \"progress_payment\",\n      \"reasoning\": \"Identical Purchase Order (PO) number suggests two draws on the same contract. Invoice numbers M1 and M5 and dates Jan 2018 and May 2018 are sequential.\",\n      \"evidence\": [\n        {\n          \"field\": \"po_number\",\n          \"values\": [\n            \"CPO28240000490865\",\n            \"CPO28240000490865\"\n          ]\n        },\n        {\n          \"field\": \"invoice_number_raw\",\n          \"values\": [\n            \"EVL00076M1\",\n            \"EVL00076M5\"\n          ]\n        },\n        {\n          \"field\": \"amount\",\n          \"values\": [\n            \"127.33\",\n            \"127.33\"\n          ]\n        }\n      ],\n      \"confidence\": 0.95\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686737,
+    "id": "chatcmpl-d7ceaf88-6e50-48a3-80cf-712fa2a3ad1a",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1348,
+      "prompt_tokens": 928,
+      "prompt_tokens_details": null,
+      "total_tokens": 2276
+    }
+  }
+}

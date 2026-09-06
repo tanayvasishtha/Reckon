@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"2091.06\",\"candidate_id\":\"exact_duplicate:EVAL00000247:EVAL00000248\",\"signal\":\"exact_duplicate\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000247\",\"EVAL00000248\"]},\"related\":[],\"transactions\":[{\"amount\":\"2091.06\",\"department\":\"GENERAL SERVICES\",\"description\":null,\"distinct_line_amounts\":[\"2091.06\"],\"invoice_amount\":\"2091.06\",\"invoice_canonical\":\"EVL00089\",\"invoice_date\":\"2019-06-01\",\"invoice_number_raw\":\"EVL00089\",\"line_count\":1,\"payment_date\":\"2019-06-01\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"EVALPO00089\",\"transaction_id\":\"EVAL00000247\",\"vendor_canonical\":\"APPLIEDLNGTECHNOLOGIES\",\"vendor_id\":\"000040468\",\"vendor_name_raw\":\"APPLIED LNG TECHNOLOGIES\"},{\"amount\":\"2091.06\",\"department\":\"GENERAL SERVICES\",\"description\":null,\"distinct_line_amounts\":[\"2091.06\"],\"invoice_amount\":\"2091.06\",\"invoice_canonical\":\"EVL00089\",\"invoice_date\":\"2019-06-01\",\"invoice_number_raw\":\"EVL00089\",\"line_count\":1,\"payment_date\":\"2019-06-01\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"EVALPO00080\",\"transaction_id\":\"EVAL00000248\",\"vendor_canonical\":\"APPLIEDLNGTECHNOLOGIES\",\"vendor_id\":\"000040468\",\"vendor_name_raw\":\"APPLIED LNG TECHNOLOGIES\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"exact_duplicate:EVAL00000247:EVAL00000248\",\"verdict\":\"dismiss\",\"explanation_type\":\"different_po\",\"reasoning\":\"Payments share identical invoice, date, and amount but correspond to different Purchase Orders (EVALPO00089 vs EVALPO00080). This indicates two separate, distinct transactions rather than a single duplicate.\",\"evidence\":[{\"field\":\"po_number\",\"values\":[\"EVALPO00089\",\"EVALPO00080\"]},{\"field\":\"invoice_canonical\",\"values\":[\"EVL00089\"]}],\"confidence\":0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for duplicate-payment pairs.\n    *   **Goal:** Dismiss candidates with a valid explanation, otherwise escalate.\n    *   **Constraints:** Single JSON object. No markdown. No commentary.\n    *   **Rules:** False positives are bad. Use the provided fields.\n    *   **Fields:** `candidate_id`, `verdict`, `explanation_type`, `reasoning`, `evidence`, `confidence`.\n    *   **Input Data:**\n        *   `candidate_id`: `exact_duplicate:EVAL00000247:EVAL00000248`\n        *   `signal`: `exact_duplicate`\n        *   `transactions`:\n            *   TX 1 (`EVAL00000247`): APPLIED LNG TECHNOLOGIES, $2091.06, Invoice EVL00089, PO EVALPO00089, Payment Date 2019-06-01.\n            *   TX 2 (`EVAL00000248`): APPLIED LNG TECHNOLOGIES, $2091.06, Invoice EVL00089, PO EVALPO00080, Payment Date 2019-06-01.\n        *   `related`: Empty.\n\n2.  **Analyze the Transactions:**\n    *   **Vendor:** Same (`APPLIED LNG TECHNOLOGIES`).\n    *   **Invoice:** Same (`EVL00089`).\n    *   **Date:** Same (`2019-06-01`).\n    *   **Amount:** Same (`2091.06`).\n    *   **Payment Status:** Both `PAID`.\n    *   **Payment Method:** Both `CHECK`.\n    *   **PO Numbers:** *Different*. TX 1 has `EVALPO00089`, TX 2 has `EVALPO00080`.\n    *   **Signal:** \"exact_duplicate\".\n\n3.  **Determine Verdict:**\n    *   The signal says \"exact duplicate\", but they share the same Invoice and the same Date.\n    *   However, the PO numbers are different (`EVALPO00089` vs `EVALPO00080`).\n    *   Could this be a **different_po**? The prompt says \"Purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\" The PO numbers are distinct and similar (both start with EVALPO). They are different orders, likely for the same item or portion of a project, resulting in identical invoice and payment details for a specific line item.\n    *   Is it **line_split**? Both invoices (and payments) have a single line amount of `2091.06`. Unlikely to be a split when the amounts match exactly and there's a difference in the PO.\n    *   Is it **partial_pair**? Usually implies the first payment is partial and the second is the remainder. Here, both are full amounts (`2091.06`).\n    *   Is it **progress_payment**? No description text like \"Progress payment...\".\n    *   Is it **cancelled**? Status is PAID.\n    *   Is it **recurring**? Amount matches, but dates are same.\n    *   Conclusion: It's a different Purchase Order. The exact match in invoice/date is likely a coincidence of timing and amount for two separate contracts/orders.\n\n4.  **Select Explanation Type:**\n    *   `different_po`: This fits best.\n\n5.  **Draft Content:**\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"different_po\"\n    *   `reasoning`: \"Two payments for the same invoice amount and date, but linked to different PO numbers (EVALPO00089 vs EVALPO00080). Likely separate contracts for the same service/item or system discrepancy in PO assignment.\"\n    *   `evidence`:\n        *   field: `po_number`, values: [\"EVALPO00089\", \"EVALPO00080\"]\n        *   field: `amount`, values: [\"2091.06\", \"2091.06\"]\n        *   field: `invoice_canonical`, values: [\"EVL00089\"]\n    *   `confidence`: High, the difference in PO numbers is strong evidence it's not a true duplicate.\n\n6.  **Final JSON Construction:**\n    *   Double-check keys.\n    *   Check types (confidence float).\n    *   No extra text.\n\n    ```json\n    {\n      \"candidate_id\": \"exact_duplicate:EVAL00000247:EVAL00000248\",\n      \"verdict\": \"dismiss\",\n      \"explanation_type\": \"different_po\",\n      \"reasoning\": \"Payments share identical invoice, date, and amount but correspond to different Purchase Orders (EVALPO00089 vs EVALPO00080). This indicates two separate, distinct transactions rather than a single duplicate.\",\n      \"evidence\": [\n        {\n          \"field\": \"po_number\",\n          \"values\": [\n            \"EVALPO00089\",\n            \"EVALPO00080\"\n          ]\n        },\n        {\n          \"field\": \"invoice_canonical\",\n          \"values\": [\n            \"EVL00089\"\n          ]\n        }\n      ],\n      \"confidence\": 0.95\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788679167,
+    "id": "chatcmpl-333b821a-4000-4846-bb38-724a4e1028f5",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1209,
+      "prompt_tokens": 913,
+      "prompt_tokens_details": null,
+      "total_tokens": 2122
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"86.02\",\"candidate_id\":\"invoice_variant:EVAL00000171:EVAL00000176\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000171\",\"EVAL00000176\"]},\"related\":[],\"transactions\":[{\"amount\":\"86.02\",\"department\":\"FIRE\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"86.02\"],\"invoice_amount\":\"86.02\",\"invoice_canonical\":\"EVL00071M1\",\"invoice_date\":\"2018-01-15\",\"invoice_number_raw\":\"EVL00071M1\",\"line_count\":1,\"payment_date\":\"2018-01-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000488211\",\"transaction_id\":\"EVAL00000171\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"},{\"amount\":\"86.02\",\"department\":\"FIRE\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"86.02\"],\"invoice_amount\":\"86.02\",\"invoice_canonical\":\"EVL00071M6\",\"invoice_date\":\"2018-06-15\",\"invoice_number_raw\":\"EVL00071M6\",\"line_count\":1,\"payment_date\":\"2018-06-15\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38240000488211\",\"transaction_id\":\"EVAL00000176\",\"vendor_canonical\":\"TURNOUTMAINTENANCE\",\"vendor_id\":\"000037763\",\"vendor_name_raw\":\"TURNOUT MAINTENANCE CO LLC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:EVAL00000171:EVAL00000176\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"recurring\",\n  \"reasoning\": \"Vendor received two monthly professional services payments of 86.02 on 2018-01-15 and 2018-06-15 under the same PO. Likely part of a recurring service agreement.\",\n  \"evidence\": [\n    {\n      \"field\": \"vendor_name_raw\",\n      \"values\": [\n        \"TURNOUT MAINTENANCE CO LLC\",\n        \"TURNOUT MAINTENANCE CO LLC\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"86.02\",\n        \"86.02\"\n      ]\n    },\n    {\n      \"field\": \"po_number\",\n      \"values\": [\n        \"CPO38240000488211\",\n        \"CPO38240000488211\"\n      ]\n    },\n    {\n      \"field\": \"payment_date\",\n      \"values\": [\n        \"2018-01-15\",\n        \"2018-06-15\"\n      ]\n    },\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Professional services\",\n        \"Professional services\"\n      ]\n    }\n  ],\n  \"confidence\": 0.95\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate ID:** `invoice_variant:EVAL00000171:EVAL00000176`\n    *   **Signal:** `invoice_variant` (suggests a duplicate or near-duplicate).\n    *   **Transactions:**\n        *   Transaction 1 (EVAL00000171): Amount 86.02, Vendor: TURNOUTMAINTENANCE, PO: CPO38240000488211, Inv Date: 2018-01-15, Status: PAID.\n        *   Transaction 2 (EVAL00000176): Amount 86.02, Vendor: TURNOUTMAINTENANCE, PO: CPO38240000488211 (Same PO), Inv Date: 2018-06-15, Status: PAID.\n    *   **Related:** None.\n    *   **Commonality:** Same vendor, same amount (86.02), same PO number.\n    *   **Differences:** Different Invoice Numbers (EVL00071M1 vs EVL00071M6), different dates (Jan 15 vs Jun 15), Invoice Canonicals (EVL00071M1 vs EVL00071M6).\n\n2.  **Evaluate Candidates:**\n    *   Are they the same invoice? No, different Invoice Numbers and Dates. The dates are exactly 5 months apart (Jan to Jun).\n    *   Is one cancelled? No, status is PAID for both.\n    *   Is there a line split? Both have 1 line each, identical amounts. No.\n    *   Is this recurring?\n        *   Vendor: TURNOUTMAINTENANCE.\n        *   Amount: 86.02.\n        *   PO: CPO38240000488211 (Shared).\n        *   Dates: Jan 15, 2018 to Jun 15, 2018. Exactly 5 months.\n        *   Description: \"Professional services\" (same).\n        *   Department: FIRE (same).\n    *   Hypothesis: This looks like a recurring professional services arrangement where the same vendor is paid the same amount for the same work on a monthly basis, potentially under the same Purchase Order or the PO is being used as a blanket order, and the Invoice Numbers are incremented (M1, M6).\n    *   Since there are no related rows, I cannot *prove* the 5th month, but the 5-month gap plus the identical recurring pattern strongly suggests this is a legitimate recurring payment sequence, not a duplicate.\n\n3.  **Determine Verdict:**\n    *   Most pairs reaching me are genuine exceptions. This looks like a genuine recurring payment.\n    *   Verdict: `dismiss`.\n\n4.  **Set Explanation Type:**\n    *   Matches the pattern: Same vendor, same amount, recurring dates.\n    *   Type: `recurring`.\n\n5.  **Draft Reasoning:**\n    *   \"Vendor received two monthly payments of 86.02 on 2018-01-15 and 2018-06-15 under the same PO and department. Likely part of a recurring service agreement.\"\n\n6.  **Draft Evidence:**\n    *   Field: `vendor_name_raw`, Values: [\"TURNOUT MAINTENANCE CO LLC\"]\n    *   Field: `amount`, Values: [\"86.02\", \"86.02\"]\n    *   Field: `po_number`, Values: [\"CPO38240000488211\", \"CPO38240000488211\"]\n    *   Field: `payment_date`, Values: [\"2018-01-15\", \"2018-06-15\"]\n    *   Field: `description`, Values: [\"Professional services\", \"Professional services\"]\n\n7.  **Calculate Confidence:**\n    *   Is it 100%? No. It's possible the vendor is the same and the amount is coincidental. However, the 5-month gap makes a manual duplicate very unlikely. It's a strong recurring signal.\n    *   Confidence: 0.95.\n\n8.  **Format Output:**\n    *   JSON object only.\n\n```json\n{\n  \"candidate_id\": \"invoice_variant:EVAL00000171:EVAL00000176\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"recurring\",\n  \"reasoning\": \"Vendor received two monthly professional services payments of 86.02 on 2018-01-15 and 2018-06-15 under the same PO. Likely part of a recurring service agreement.\",\n  \"evidence\": [\n    {\n      \"field\": \"vendor_name_raw\",\n      \"values\": [\n        \"TURNOUT MAINTENANCE CO LLC\",\n        \"TURNOUT MAINTENANCE CO LLC\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"86.02\",\n        \"86.02\"\n      ]\n    },\n    {\n      \"field\": \"po_number\",\n      \"values\": [\n        \"CPO38240000488211\",\n        \"CPO38240000488211\"\n      ]\n    },\n    {\n      \"field\": \"payment_date\",\n      \"values\": [\n        \"2018-01-15\",\n        \"2018-06-15\"\n      ]\n    },\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Professional services\",\n        \"Professional services\"\n      ]\n    }\n  ],\n  \"confidence\": 0.95\n}\n```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686452,
+    "id": "chatcmpl-92048bd2-2c49-40f0-834d-6b945936a9b4",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1448,
+      "prompt_tokens": 924,
+      "prompt_tokens_details": null,
+      "total_tokens": 2372
+    }
+  }
+}

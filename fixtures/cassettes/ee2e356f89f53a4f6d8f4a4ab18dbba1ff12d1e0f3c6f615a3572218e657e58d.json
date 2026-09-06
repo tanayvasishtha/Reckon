@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"168.95\",\"candidate_id\":\"invoice_variant:EVAL00000214:EVAL00000217\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000214\",\"EVAL00000217\"]},\"related\":[],\"transactions\":[{\"amount\":\"168.95\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"168.95\"],\"invoice_amount\":\"168.95\",\"invoice_canonical\":\"EVL00078M2\",\"invoice_date\":\"2018-02-15\",\"invoice_number_raw\":\"EVL00078M2\",\"line_count\":1,\"payment_date\":\"2018-02-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24138838A\",\"transaction_id\":\"EVAL00000214\",\"vendor_canonical\":\"HURRELLCANTRALL\",\"vendor_id\":\"100037751\",\"vendor_name_raw\":\"HURRELL CANTRALL LLP\"},{\"amount\":\"168.95\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"168.95\"],\"invoice_amount\":\"168.95\",\"invoice_canonical\":\"EVL00078M5\",\"invoice_date\":\"2018-05-15\",\"invoice_number_raw\":\"EVL00078M5\",\"line_count\":1,\"payment_date\":\"2018-05-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24138838A\",\"transaction_id\":\"EVAL00000217\",\"vendor_canonical\":\"HURRELLCANTRALL\",\"vendor_id\":\"100037751\",\"vendor_name_raw\":\"HURRELL CANTRALL LLP\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:EVAL00000214:EVAL00000217\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"progress_payment\",\n  \"reasoning\": \"Payments linked by identical PO SC12CO24138838A for professional services. Invoice numbers EVL00078M2 and EVL00078M5 show sequential variation (2 vs 5), with dates 3 months apart. This indicates a series of invoices or progress draws rather than a duplicate check.\",\n  \"evidence\": [\n    {\n      \"field\": \"po_number\",\n      \"values\": [\"SC12CO24138838A\", \"SC12CO24138838A\"]\n    },\n    {\n      \"field\": \"invoice_number_raw\",\n      \"values\": [\"EVL00078M2\", \"EVL00078M5\"]\n    },\n    {\n      \"field\": \"payment_date\",\n      \"values\": [\"2018-02-15\", \"2018-05-15\"]\n    }\n  ],\n  \"confidence\": 0.85\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for AP exception pipeline (Stage 5).\n    *   **Goal:** Kill (dismiss) false positives, escalate real dups/uncertain cases.\n    *   **Principles:** Prioritize maintaining vendor relationships (don't ask for money back if not owed). Name a matching explanation to dismiss. If not certain/explainable, escalate.\n    *   **Output Format:** Single JSON object, no markdown.\n    *   **Input Data:**\n        *   `candidate_id`: `invoice_variant:EVAL00000214:EVAL00000217`\n        *   Signal: `invoice_variant` (Two distinct invoice numbers).\n        *   Related: Empty array.\n        *   Transactions:\n            *   T1 (EVAL00000214): PO SC12CO24138838A, Invoice EVL00078M2, Date 2018-02-15, Amount 168.95, Status PAID.\n            *   T2 (EVAL00000217): PO SC12CO24138838A, Invoice EVL00078M5, Date 2018-05-15, Amount 168.95, Status PAID.\n\n2.  **Evaluate the Candidate:**\n    *   **Vendor:** HURRELL CANTRALL LLP.\n    *   **Amounts:** Both exactly 168.95.\n    *   **Date:** Feb 15 vs May 15 (3 months apart).\n    *   **Invoice Numbers:** EVL00078M2 vs EVL00078M5. Notice the middle \"M\" followed by a digit (2 and 5). This looks like sequence numbers (e.g., Month 2 and Month 5 of an account series or project series).\n    *   **PO Number:** Both share `SC12CO24138838A`. This is a strong link.\n    *   **Description/Service:** Both \"Professional services\".\n\n3.  **Determine Verdict:**\n    *   *Is it a duplicate?* They paid the same amount. But the dates are different (3 months apart) and invoice numbers are different.\n    *   *Is it a valid business reason?* Yes. A construction or professional services contract often involves progress payments or multiple invoices over time. The invoice numbers EVL00078M2 and EVL00078M5 strongly suggest a sequence. The PO is identical. The dates are sequential (February, May).\n    *   *Explanation Type:* `progress_payment`. The signal is often invoice variant (invoice numbers changing) which triggers the pipeline. The dates differ, suggesting distinct events in a series, but the shared PO and similar dates/names point to a related contract draw.\n\n4.  **Draft Reasoning:**\n    *   Two payments related to the same PO (`SC12CO24138838A`).\n    *   Dates are 3 months apart (Feb vs May).\n    *   Invoice numbers are sequential (2 vs 5) within the same series prefix (`EVL00078`).\n    *   Descriptions match.\n    *   This looks like a series of progress payments or distinct invoices for the same project, not a duplicate payment of the exact same check.\n\n5.  **Check Confidence:**\n    *   Is it 100%? No, it's a judgment call based on partial info.\n    *   Is it high? Yes, the PO match and sequential invoice numbers make it very likely a legitimate series.\n\n6.  **Construct Output JSON:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000214:EVAL00000217\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"progress_payment\"\n    *   `reasoning`: \"Two payments for professional services linked by identical PO SC12CO24138838A. Invoice numbers EVL00078M2 and EVL00078M5 appear to be sequential parts of a series, with dates 3 months apart.\"\n    *   `evidence`:\n        *   {\"field\": \"po_number\", \"values\": [\"SC12CO24138838A\", \"SC12CO24138838A\"]}\n        *   {\"field\": \"invoice_number_raw\", \"values\": [\"EVL00078M2\", \"EVL00078M5\"]}\n        *   {\"field\": \"payment_date\", \"values\": [\"2018-02-15\", \"2018-05-15\"]}\n    *   `confidence`: 0.85 (High, but not absolute due to lack of contract details).\n\n7.  **Final Review:**\n    *   Does it meet constraints? Yes, JSON only, keys match, no commentary.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686874,
+    "id": "chatcmpl-b7b5fe98-ac47-43a3-8958-2fac54d7e40a",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1229,
+      "prompt_tokens": 928,
+      "prompt_tokens_details": null,
+      "total_tokens": 2157
+    }
+  }
+}

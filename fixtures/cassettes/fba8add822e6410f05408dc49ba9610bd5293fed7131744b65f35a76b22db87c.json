@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"113.70\",\"candidate_id\":\"invoice_variant:EVAL00000189:EVAL00000191\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000189\",\"EVAL00000191\"]},\"related\":[],\"transactions\":[{\"amount\":\"113.70\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"113.70\"],\"invoice_amount\":\"113.70\",\"invoice_canonical\":\"EVL00074M1\",\"invoice_date\":\"2018-01-15\",\"invoice_number_raw\":\"EVL00074M1\",\"line_count\":1,\"payment_date\":\"2018-01-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24142414M\",\"transaction_id\":\"EVAL00000189\",\"vendor_canonical\":\"MADDEN\",\"vendor_id\":\"VC0000036130\",\"vendor_name_raw\":\"MADDEN CORPORATION\"},{\"amount\":\"113.70\",\"department\":\"CITY ATTORNEY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"113.70\"],\"invoice_amount\":\"113.70\",\"invoice_canonical\":\"EVL00074M3\",\"invoice_date\":\"2018-03-15\",\"invoice_number_raw\":\"EVL00074M3\",\"line_count\":1,\"payment_date\":\"2018-03-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24142414M\",\"transaction_id\":\"EVAL00000191\",\"vendor_canonical\":\"MADDEN\",\"vendor_id\":\"VC0000036130\",\"vendor_name_raw\":\"MADDEN CORPORATION\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:EVAL00000189:EVAL00000191\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"recurring\",\n  \"reasoning\": \"The two payments are identical in amount and vendor. The dates (Jan 15, 2018 and Mar 15, 2018) are exactly two months apart, indicating a recurring service agreement for Professional services.\",\n  \"evidence\": [\n    {\n      \"field\": \"vendor_name_raw\",\n      \"values\": [\n        \"MADDEN CORPORATION\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"113.70\"\n      ]\n    },\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Professional services\"\n      ]\n    },\n    {\n      \"field\": \"payment_date\",\n      \"values\": [\n        \"2018-01-15\",\n        \"2018-03-15\"\n      ]\n    }\n  ],\n  \"confidence\": 0.95\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Candidate:**\n    *   **Candidate ID:** `invoice_variant:EVAL00000189:EVAL00000191`\n    *   **Amount at Risk:** $113.70 (identical amounts).\n    *   **Vendor:** MADDEN CORPORATION (same).\n    *   **Department:** CITY ATTORNEY (same).\n    *   **Description:** Professional services (same).\n    *   **Status:** Both PAID.\n    *   **Payment Date:** Jan 15, 2018 vs. Mar 15, 2018.\n    *   **Invoice Numbers:** EVL00074M1 vs. EVL00074M3 (different).\n    *   **PO Numbers:** SC12CO24142414M (same).\n    *   **Transaction IDs:** EVAL00000189 vs. EVAL00000191.\n\n2.  **Evaluate Signal:**\n    *   The signal is \"invoice_variant\". This typically implies two payment lines attached to the same canonical invoice, or a scenario where the canonical ID changed between two records.\n    *   However, looking at the data:\n        *   Invoice 1 (EVL00074M1) date: Jan 15.\n        *   Invoice 2 (EVL00074M3) date: Mar 15.\n        *   Both have the same amount ($113.70).\n        *   Both are \"Professional services\".\n    *   The invoices are physically different entities (different invoice numbers, different dates).\n    *   The dates are exactly two months apart. This strongly suggests a recurring payment (e.g., monthly retainer or scheduled service).\n    *   Is there any evidence of a split? No.\n    *   Is there evidence of a cancellation? No, both are PAID.\n    *   Is it a partial pair? No, amounts are equal.\n\n3.  **Determine Verdict:**\n    *   The pair matches the definition of *recurring*. Same vendor, same amount, same description, dates differ by regular intervals (Jan to Mar).\n    *   Can I name a matching explanation? Yes, it's recurring.\n    *   Therefore, dismiss.\n\n4.  **Map to JSON Structure:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000189:EVAL00000191\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"recurring\"\n    *   `reasoning`: \"Same vendor, same amount, same description. Dates are exactly 2 months apart (Jan 15, 2018 to Mar 15, 2018), suggesting a recurring service arrangement.\"\n    *   `evidence`:\n        *   Field: vendor_name_raw, Values: [\"MADDEN CORPORATION\"]\n        *   Field: amount, Values: [\"113.70\"]\n        *   Field: description, Values: [\"Professional services\"]\n        *   Field: payment_date, Values: [\"2018-01-15\", \"2018-03-15\"]\n    *   `confidence`: 0.95 (Very strong pattern, consistent dates).\n\n5.  **Final Check:**\n    *   Are keys correct? Yes.\n    *   Are values correct? Yes.\n    *   Is it JSON? Yes.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686607,
+    "id": "chatcmpl-5a283782-db8d-4641-ae5c-f2e396621f73",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 900,
+      "prompt_tokens": 920,
+      "prompt_tokens_details": null,
+      "total_tokens": 1820
+    }
+  }
+}

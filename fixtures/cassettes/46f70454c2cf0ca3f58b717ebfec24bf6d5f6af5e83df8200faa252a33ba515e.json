@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"107.45\",\"candidate_id\":\"split_payment:EVAL00000097:EVAL00000098\",\"signal\":\"split_payment\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000097\",\"EVAL00000098\"]},\"related\":[],\"transactions\":[{\"amount\":\"107.45\",\"department\":\"CITY ATTORNEY\",\"description\":\"Invoice as billed\",\"distinct_line_amounts\":[\"107.45\"],\"invoice_amount\":\"107.45\",\"invoice_canonical\":\"EVL00049\",\"invoice_date\":\"2019-04-22\",\"invoice_number_raw\":\"EVL00049\",\"line_count\":1,\"payment_date\":\"2019-04-22\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24142414M\",\"transaction_id\":\"EVAL00000097\",\"vendor_canonical\":\"MADDEN\",\"vendor_id\":\"VC0000036130\",\"vendor_name_raw\":\"MADDEN CORPORATION\"},{\"amount\":\"107.45\",\"department\":\"CITY ATTORNEY\",\"description\":\"Cancelled by issuer, do not remit\",\"distinct_line_amounts\":[\"107.45\"],\"invoice_amount\":\"107.45\",\"invoice_canonical\":\"EVL00049\",\"invoice_date\":\"2019-04-22\",\"invoice_number_raw\":\"EVL00049\",\"line_count\":1,\"payment_date\":\"2019-04-22\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"SC12CO24142414M\",\"transaction_id\":\"EVAL00000098\",\"vendor_canonical\":\"MADDEN\",\"vendor_id\":\"VC0000036130\",\"vendor_name_raw\":\"MADDEN CORPORATION\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"split_payment:EVAL00000097:EVAL00000098\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"cancelled\",\n  \"reasoning\": \"Second transaction is cancelled by issuer ('do not remit'). First transaction is the valid payment. Amounts are identical, ruling out partial payment.\",\n  \"evidence\": [\n    {\n      \"field\": \"description\",\n      \"values\": [\n        \"Invoice as billed\",\n        \"Cancelled by issuer, do not remit\"\n      ]\n    },\n    {\n      \"field\": \"amount\",\n      \"values\": [\n        \"107.45\",\n        \"107.45\"\n      ]\n    }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Goal:** Adjudicate duplicate payment candidates in an AP pipeline.\n    *   **Role:** Stage 5 judge.\n    *   **Constraint:** Kill candidates (dismiss), don't raise them (escalate). A false positive is worse than a miss.\n    *   **Output:** Single JSON object. No markdown, no commentary.\n    *   **Rules:** Compare amounts as decimals. Use provided `explanation_type` values.\n    *   **Input Data:**\n        *   `candidate_id`: `split_payment:EVAL00000097:EVAL00000098`\n        *   `signal`: `split_payment`\n        *   `transactions`: Two rows with `amount=\"107.45\"`.\n        *   `related`: Empty array.\n        *   `transaction_ids`: EVAL00000097, EVAL00000098.\n\n2.  **Analyze the Input Data:**\n    *   **Tx 1 (EVAL00000097):**\n        *   `description`: \"Invoice as billed\"\n        *   `payment_status`: \"PAID\"\n        *   `amount`: \"107.45\"\n    *   **Tx 2 (EVAL00000098):**\n        *   `description`: \"Cancelled by issuer, do not remit\"\n        *   `payment_status`: \"PAID\"\n        *   `amount`: \"107.45\"\n\n3.  **Evaluate Candidate:**\n    *   *Signal:* `split_payment`. This usually means one invoice is split across multiple payments (e.g., partial payment + remainder).\n    *   *Observation:* Both transactions have the *same* amount (107.45). Both have the same `po_number` (SC12CO24142414M). Both have the same `invoice_number_raw` (EVL00049).\n    *   *Crucial Detail:* One is described as \"Invoice as billed\" and PAID. The other is described as \"Cancelled by issuer, do not remit\" and PAID.\n    *   *Conclusion:* This is not a split payment of one invoice into two *successful* payments (which would usually have different amounts or different statuses). It looks like a duplicate bill was paid (initially), and then the bill was cancelled by the issuer (MADDEN Corporation), but the original payment remains on the books. Or, a payment was made and reversed, but the reverse status is \"PAID\" (which implies the payment remains valid/received, or the system status is misleading, but the description \"Cancelled by issuer, do not remit\" is the key).\n    *   *Alternative Interpretation (The \"Split\" signal):* The signal might be triggered because the original invoice is EVL00049, and there are two transactions. However, the *explanation* is not \"partial pair\" because the amounts are equal.\n    *   *Best Explanation:* This is a duplicate payment scenario caused by a cancellation of the invoice itself. The flag \"Cancelled by issuer, do not remit\" on the second transaction overrides the \"Invoice as billed\" on the first. Both are for the exact same amount, so no partial/full reconciliation is happening here.\n    *   *Refining the \"Explanation Type\":*\n        *   `cancelled`: \"one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\"\n        *   Here, Tx 2 explicitly says \"Cancelled by issuer\".\n    *   *Verdict:* Dismiss.\n\n4.  **Drafting the JSON:**\n    *   `candidate_id`: \"split_payment:EVAL00000097:EVAL00000098\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"cancelled\" (because one transaction states it was cancelled by the issuer).\n    *   `reasoning`: \"Second transaction is cancelled by issuer ('do not remit'). First transaction is the valid payment. Amounts are identical, ruling out partial payment.\"\n    *   `evidence`: `[{\"field\": \"description\", \"values\": [\"Invoice as billed\", \"Cancelled by issuer, do not remit\"]}, {\"field\": \"amount\", \"values\": [\"107.45\", \"107.45\"]}]`\n    *   `confidence`: 1.0. It's very clear from the description.\n\n5.  **Final Check:**\n    *   Is it a split payment? No, the amounts match.\n    *   Is it cancelled? Yes, the description says so.\n    *   Are there related rows? No.\n    *   Format? JSON only.\n\n    *Self-Correction/Refinement:* The prompt says \"Deterministic rules have already removed cancelled statuses\". Wait, if deterministic rules removed \"cancelled statuses\", how is this still here?\n    *   Let's look at the input transaction statuses: Both are \"PAID\".\n    *   If deterministic rules removed \"cancelled statuses\", the one marked \"Cancelled by issuer\" might have slipped through if the rules look for a status code like \"CANCELLED\" vs \"PAID\". Here, both are \"PAID\". So, the *status* field didn't tell us it was cancelled; the *description* did.\n    *   So my analysis holds. The detection is based on text description, not the status field.\n\n6.  **Constructing Output:**\n    ```json\n    {\n      \"candidate_id\": \"split_payment:EVAL00000097:EVAL00000098\",\n      \"verdict\": \"dismiss\",\n      \"explanation_type\": \"cancelled\",\n      \"reasoning\": \"Transaction EVAL00000098 is marked 'Cancelled by issuer, do not remit'. The amounts are identical (107.45), ruling out a partial payment scenario.\",\n      \"evidence\": [\n        {\n          \"field\": \"description\",\n          \"values\": [\n            \"Invoice as billed\",\n            \"Cancelled by issuer, do not remit\"\n          ]\n        },\n        {\n          \"field\": \"amount\",\n          \"values\": [\n            \"107.45\",\n            \"107.45\"\n          ]\n        }\n      ],\n      \"confidence\": 1\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788687580,
+    "id": "chatcmpl-afa8f618-10e1-4b63-9347-fa9ab078075a",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1451,
+      "prompt_tokens": 919,
+      "prompt_tokens_details": null,
+      "total_tokens": 2370
+    }
+  }
+}

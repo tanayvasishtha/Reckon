@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"98.48\",\"candidate_id\":\"invoice_variant:EVAL00000208:EVAL00000209\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000208\",\"EVAL00000209\"]},\"related\":[],\"transactions\":[{\"amount\":\"98.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"98.48\"],\"invoice_amount\":\"98.48\",\"invoice_canonical\":\"EVL00077M2\",\"invoice_date\":\"2018-02-15\",\"invoice_number_raw\":\"EVL00077M2\",\"line_count\":1,\"payment_date\":\"2018-02-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"CPO08240000492119\",\"transaction_id\":\"EVAL00000208\",\"vendor_canonical\":\"KONICAMINOLTABUSINESSSOLUTIONS\",\"vendor_id\":\"000002245\",\"vendor_name_raw\":\"KONICA MINOLTA BUSINESS SOLUTIONS\"},{\"amount\":\"98.48\",\"department\":\"BUILDING AND SAFETY\",\"description\":\"Professional services\",\"distinct_line_amounts\":[\"98.48\"],\"invoice_amount\":\"98.48\",\"invoice_canonical\":\"EVL00077M3\",\"invoice_date\":\"2018-03-15\",\"invoice_number_raw\":\"EVL00077M3\",\"line_count\":1,\"payment_date\":\"2018-03-15\",\"payment_method\":\"EFT\",\"payment_status\":\"PAID\",\"po_number\":\"CPO08240000492119\",\"transaction_id\":\"EVAL00000209\",\"vendor_canonical\":\"KONICAMINOLTABUSINESSSOLUTIONS\",\"vendor_id\":\"000002245\",\"vendor_name_raw\":\"KONICA MINOLTA BUSINESS SOLUTIONS\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n\"candidate_id\": \"invoice_variant:EVAL00000208:EVAL00000209\",\n\"verdict\": \"dismiss\",\n\"explanation_type\": \"recurring\",\n\"reasoning\": \"Seems to be a series of monthly invoices for the same service contract. Identical vendor, amount, PO number, and professional services description with distinct invoice numbers and sequential dates.\",\n\"evidence\": [\n{\n\"field\": \"vendor_name_raw\",\n\"values\": [\n\"KONICA MINOLTA BUSINESS SOLUTIONS\",\n\"KONICA MINOLTA BUSINESS SOLUTIONS\"\n]\n},\n{\n\"field\": \"amount\",\n\"values\": [\n\"98.48\",\n\"98.48\"\n]\n},\n{\n\"field\": \"po_number\",\n\"values\": [\n\"CPO08240000492119\",\n\"CPO08240000492119\"\n]\n},\n{\n\"field\": \"invoice_number_raw\",\n\"values\": [\n\"EVL00077M2\",\n\"EVL00077M3\"\n]\n}\n],\n\"confidence\": 0.95\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Goal:** Adjudicate duplicate payment pairs.\n    *   **Rules:** Kill (dismiss) candidates with a valid explanation. Escalate (no explanation) otherwise. Prioritize accuracy over sensitivity (false positives hurt relationships).\n    *   **Constraints:** Return a *single* JSON object, no markdown, no commentary.\n    *   **Input:** A candidate pair with `candidate_id`, related transactions, and specific details.\n    *   **Output Keys:** `candidate_id`, `verdict` (\"dismiss\" or \"escalate\"), `explanation_type`, `reasoning`, `evidence`, `confidence`.\n\n2.  **Analyze the Input Data:**\n    *   **Candidate ID:** `invoice_variant:EVAL00000208:EVAL00000209`\n    *   **Signal:** `invoice_variant`\n    *   **Amount at Risk:** 98.48\n    *   **Transactions:**\n        *   **Row 1 (EVAL00000208):**\n            *   Amount: 98.48\n            *   Invoice No: EVL00077M2\n            *   Invoice Date: 2018-02-15\n            *   PO: CPO08240000492119\n            *   Status: PAID\n            *   Vendor: KONICA MINOLTA BUSINESS SOLUTIONS\n        *   **Row 2 (EVAL00000209):**\n            *   Amount: 98.48\n            *   Invoice No: EVL00077M3\n            *   Invoice Date: 2018-03-15\n            *   PO: CPO08240000492119\n            *   Status: PAID\n            *   Vendor: KONICA MINOLTA BUSINESS SOLUTIONS\n\n3.  **Evaluate for Duplication:**\n    *   **Vendor:** Identical (KONICAMINOLTABUSINESSSOLUTIONS / KONICA MINOLTA BUSINESS SOLUTIONS).\n    *   **Amount:** Identical (98.48).\n    *   **PO:** Identical (CPO08240000492119).\n    *   **Descriptions:** Identical (\"Professional services\").\n    *   **Dates:** Differ by one month (Feb 15 vs Mar 15).\n\n4.  **Identify Potential Explanation Types:**\n    *   *Cancelled?* No, both status are PAID.\n    *   *Line Split?* Both have 1 line, 98.48 amount. Unlikely a split unless it's a partials.\n    *   *Progress Payment?* The signal is `invoice_variant`. A progress payment usually has a description text like \"Progress payment 3 of 5\" or similar. The description here is \"Professional services\". However, the PO numbers are identical. This looks like a recurring service agreement or a monthly invoice for the same PO.\n    *   *Recurring?* The invoices differ (M2 vs M3), dates differ by a month, same vendor, same amount, same PO, same description. This strongly suggests a recurring invoice (e.g., monthly maintenance/fees) for the same contract (PO). This fits the \"invoice_variant\" signal contextually (variant of the same recurring series or distinct invoices under the same contract).\n    *   *Different PO?* No, POs are identical.\n    *   *Partial Pair?* No obvious \"partial\" text.\n\n5.  **Select the Best Explanation:**\n    *   The fact that the PO numbers are identical and the amounts/descriptions are identical suggests these are monthly invoices for the same contract.\n    *   Is it \"Recurring\"? Yes. Same vendor, same amount, different invoice numbers (M2, M3), distinct dates (Feb, Mar).\n    *   Is it \"Progress Payment\"? Sometimes used loosely, but usually involves stages. \"Professional services\" is generic. \"Recurring\" fits better for month-to-month invoices with identical amounts.\n\n    *Self-Correction/Refinement:* Let's look at the `signal` provided: `invoice_variant`. This usually flags invoice numbers that are close or related. EVL00077M2 and EVL00077M3 look like they share a base ID. In many AP systems, invoices ending in specific characters represent batches or recurring items.\n    Given the identical amounts, same PO, same department, same vendor, and sequential dates, **\"recurring\"** is the most appropriate classification. The amounts are likely the same because it's a fixed monthly fee for the service ordered via PO CPO08240000492119.\n\n    *Alternative Interpretation:* Could it be \"different_po\"? No, PO is the same.\n    Could it be \"line_split\"? No, looks like two distinct invoices.\n\n    Let's stick with **\"recurring\"**.\n\n6.  **Draft the JSON Content:**\n    *   `candidate_id`: \"invoice_variant:EVAL00000208:EVAL00000209\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"recurring\"\n    *   `reasoning`: \"Repeated monthly invoices for the same professional services contract (PO CPO08240000492119) with identical amounts. Invoices EVL00077M2 and EVL00077M3 represent sequential months.\"\n    *   `evidence`:\n        *   field: \"vendor_name_raw\", values: [\"KONICA MINOLTA BUSINESS SOLUTIONS\"]\n        *   field: \"po_number\", values: [\"CPO08240000492119\"]\n        *   field: \"amount\", values: [\"98.48\", \"98.48\"]\n        *   field: \"invoice_number_raw\", values: [\"EVL00077M2\", \"EVL00077M3\"]\n    *   `confidence`: 0.95 (High confidence due to exact matching PO, amount, and vendor across distinct dates).\n\n7.  **Final Check:**\n    *   JSON format? Yes.\n    *   No markdown? Yes.\n    *   Honest confidence? Yes.\n    *   Explanation type correct? Yes (\"recurring\").\n\n8.  **Construct Output:** (Produces JSON string).",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788686820,
+    "id": "chatcmpl-1d44a361-cd6e-49e9-b15d-c0447633f1af",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1532,
+      "prompt_tokens": 942,
+      "prompt_tokens_details": null,
+      "total_tokens": 2474
+    }
+  }
+}

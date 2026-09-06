@@ -18,10 +18,10 @@ Precision, recall, and F1 are computed on planted duplicates. A finding is `verd
 
 | metric | rules-only | full pipeline |
 | --- | --- | --- |
-| precision | 0.400000 | 0.000000 |
-| recall | 1.000000 | 0.000000 |
-| f1 | 0.571429 | 0.000000 |
-| dollars_correct | 64134.05 | 0 |
+| precision | 0.400000 | 0.717949 |
+| recall | 1.000000 | 0.700000 |
+| f1 | 0.571429 | 0.708861 |
+| dollars_correct | 64134.05 | 52245.40 |
 | dollars_wrong | 76093.78 | 0 |
 
 ### False positives by decoy reason
@@ -29,23 +29,23 @@ Precision, recall, and F1 are computed on planted duplicates. A finding is `verd
 | reason | rules-only | full pipeline |
 | --- | --- | --- |
 | cancelled | 10 | 0 |
-| different_po | 10 | 0 |
+| different_po | 10 | 4 |
 | line_split | 10 | 0 |
-| partial_pair | 10 | 0 |
+| partial_pair | 10 | 1 |
 | progress_payment | 10 | 0 |
-| recurring | 10 | 0 |
+| recurring | 10 | 6 |
 
 ## Cost and runtime
 
 | metric | rules-only | full pipeline cold | full pipeline warm |
 | --- | --- | --- | --- |
-| wall_clock_s | 3.235286 | 3.835378 | 3.606705 |
-| tokens_in | 0 | 0 | 0 |
-| tokens_out | 0 | 0 | 0 |
+| wall_clock_s | 0.896969 | 3.068331 | 2.770195 |
+| tokens_in | 0 | 1478161 | 1478161 |
+| tokens_out | 0 | 4251986 | 4251986 |
 | cache_read | 0 | 0 | 0 |
 | cache_hit_rate | 0.000000 | 0.000000 | 0.000000 |
 | token_cost | 0 | 0 | 0 |
 | model_escalation_rate | 0.000000 | 0.000000 | 0.000000 |
-| escalate | 1731 | 0 | 0 |
-| dismiss | 11 | 11 | 11 |
-| errored | 0 | 1731 | 1731 |
+| escalate | 1731 | 758 | 758 |
+| dismiss | 11 | 818 | 818 |
+| errored | 0 | 166 | 166 |
