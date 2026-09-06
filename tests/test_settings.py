@@ -13,8 +13,8 @@ def test_settings_defaults() -> None:
     settings = Settings()
     assert settings.api_base is None
     assert settings.api_key is None
-    assert settings.model_fast is None
-    assert settings.model_escalate is None
+    assert settings.model_fast == "glm-4-7-flash"
+    assert settings.model_escalate == "glm-4-7-flash"
     assert settings.price_fast_in == Decimal(0)
     assert settings.price_fast_out == Decimal(0)
     assert settings.price_esc_in == Decimal(0)
@@ -52,6 +52,28 @@ def test_from_env_reads_known_variables_and_ignores_others() -> None:
     assert settings.concurrency_limit == 8
     assert settings.escalation_confidence_threshold == 0.55
     assert settings.blocking_bucket_cap == 50
+
+
+def test_from_env_defaults_model_names_when_unset() -> None:
+    settings = Settings.from_env(
+        {
+            "PATH": "/usr/bin",
+            "RECKON_API_BASE": "https://api.example.com/v1",
+        }
+    )
+    assert settings.model_fast == "glm-4-7-flash"
+    assert settings.model_escalate == "glm-4-7-flash"
+
+
+def test_from_env_model_names_override_defaults() -> None:
+    settings = Settings.from_env(
+        {
+            "RECKON_MODEL_FAST": "fast-model",
+            "RECKON_MODEL_ESCALATE": "escalate-model",
+        }
+    )
+    assert settings.model_fast == "fast-model"
+    assert settings.model_escalate == "escalate-model"
 
 
 def test_empty_env_values_use_defaults() -> None:

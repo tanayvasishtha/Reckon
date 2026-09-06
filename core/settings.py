@@ -24,8 +24,8 @@ _ENV_TO_FIELD: dict[str, str] = {
 class Settings(SchemaModel):
     api_base: str | None = None
     api_key: str | None = None
-    model_fast: str | None = None
-    model_escalate: str | None = None
+    model_fast: str | None = "glm-4-7-flash"
+    model_escalate: str | None = "glm-4-7-flash"
     price_fast_in: Money = Decimal(0)
     price_fast_out: Money = Decimal(0)
     price_esc_in: Money = Decimal(0)
