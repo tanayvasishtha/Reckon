@@ -1,0 +1,38 @@
+# Generic adapter column map
+#
+# encoding: CSV character encoding. Default utf-8. Use cp1252 for
+# Windows exports that fail to decode as utf-8.
+#
+# columns: map each Transaction field to a CSV header. Keys are
+# Transaction field names. Values are the source column names.
+#
+# Required keys: transaction_id, vendor_name_raw, amount.
+# Omit any optional field the source does not provide. Capabilities
+# are derived from which of these keys are present:
+#   vendor_id            -> has_vendor_id
+#   invoice_number_raw   -> has_invoice_number
+#   invoice_amount       -> has_invoice_amount
+#   po_number            -> has_po_number
+#   payment_status       -> has_payment_status
+#
+# Other optional keys: invoice_date, payment_date, payment_method,
+# department, description.
+#
+# Do not map vendor_canonical, invoice_canonical, line_count, or
+# distinct_line_amounts; later stages fill those.
+
+encoding: utf-8
+columns:
+  transaction_id: txn_id
+  vendor_name_raw: vendor_name
+  vendor_id: vendor_code
+  invoice_number_raw: invoice_number
+  invoice_date: invoice_date
+  payment_date: payment_date
+  amount: amount
+  invoice_amount: invoice_amount
+  po_number: po_number
+  payment_method: payment_method
+  payment_status: payment_status
+  department: department
+  description: description
