@@ -23,10 +23,14 @@ from scripts import run_demo
 from scripts.run_demo import (
     FAST_ROW_LIMIT,
     DemoError,
+    adjudication_funnel,
     dollars_at_risk,
     format_money,
     main,
     one_line,
+    print_adjudication_funnel,
+    print_aggregate_funnel,
+    print_dismissal_funnel,
     resolve_source,
     survivors_after_adjudication,
 )
@@ -86,6 +90,47 @@ def _value(text: str, label: str) -> str:
         if line.startswith(prefix):
             return line.split(":", 1)[1].strip()
     raise AssertionError(f"missing {label!r} in:\n{text}")
+
+
+def _verdict(
+    candidate_id: str,
+    outcome: VerdictOutcome,
+    reasoning: str,
+    explanation: ExplanationType = ExplanationType.none,
+) -> Verdict:
+    return Verdict(
+        candidate_id=candidate_id,
+        verdict=outcome,
+        explanation_type=explanation,
+        reasoning=reasoning,
+        evidence=[],
+        confidence=0.0,
+        model_used="fast",
+        tokens_in=0,
+        tokens_out=0,
+        cache_read=0,
+    )
+
+
+def _duplicate_ledger(tmp_path: Path) -> tuple[Path, Path]:
+    csv_path = tmp_path / "dups.csv"
+    csv_path.write_text(
+        "txn_id,vendor_name,amount,invoice_number\n"
+        "a,Acme LLC,1250.50,INV-1\n"
+        "b,Acme LLC,1250.50,INV-1\n",
+        encoding="utf-8",
+    )
+    map_path = tmp_path / "map.yaml"
+    map_path.write_text(
+        "encoding: utf-8\n"
+        "columns:\n"
+        "  transaction_id: txn_id\n"
+        "  vendor_name_raw: vendor_name\n"
+        "  amount: amount\n"
+        "  invoice_number_raw: invoice_number\n",
+        encoding="utf-8",
+    )
+    return csv_path, map_path
 
 
 def test_demo_writes_generated_queue(tiny_la: Path, generated_queue_path: Path) -> None:
@@ -175,14 +220,20 @@ def test_header_prints_before_funnel(tiny_la: Path) -> None:
     text = _run()
     labels = _labels(text)
     assert labels[:5] == ["source", "rows", "concurrency", "mode", "commit"]
-    assert labels[5:] == [
+    for required in (
         "rows in",
         "transactions after aggregation",
         "candidates after blocking",
         "survivors after deterministic dismissal",
         "survivors after adjudication",
         "dollars at risk",
-    ]
+        "no recording",
+        "adjudication dismissed",
+        "adjudication escalated",
+        "adjudication errored",
+        "adjudication unmatched_recordings",
+    ):
+        assert required in labels
     assert _value(text, "source") == "tests/fixtures/la.csv"
     assert _value(text, "rows") == "2"
     assert _value(text, "concurrency") == "16"
@@ -190,6 +241,8 @@ def test_header_prints_before_funnel(tiny_la: Path) -> None:
     assert len(_value(text, "commit")) == 40
     assert _value(text, "rows in") == "2"
     assert _value(text, "transactions after aggregation") == "2"
+    assert "no recording:" in text
+    assert "candidates had no matching recording" in text
 
 
 def test_funnel_prints_as_stages_complete(
@@ -491,6 +544,148 @@ def test_resolve_generic_partial_map() -> None:
 
 def test_one_line_flattens_multiline() -> None:
     assert one_line(AdapterError("a\nb\\c")) == "a b/c"
+
+
+def test_noop_stage_says_passed_through_untouched(tiny_la: Path) -> None:
+    text = _run()
+    assert "passed through untouched" in text
+    assert _value(text, "aggregate in") == _value(text, "aggregate out")
+    assert _value(text, "aggregate") == "passed through untouched"
+
+
+def test_adjudication_prints_four_counts(tiny_la: Path) -> None:
+    text = _run()
+    dismissed = int(_value(text, "adjudication dismissed"))
+    escalated = int(_value(text, "adjudication escalated"))
+    errored = int(_value(text, "adjudication errored"))
+    unmatched = int(_value(text, "adjudication unmatched_recordings"))
+    rows_in = int(_value(text, "adjudication in"))
+    assert dismissed + escalated + errored + unmatched == rows_in
+    assert "no recording:" in text
+
+
+def test_all_unmatched_recordings_are_not_passthrough() -> None:
+    verdicts = [
+        _verdict("a", VerdictOutcome.errored, "no recording: missing cassette"),
+        _verdict("b", VerdictOutcome.errored, "no recording: missing cassette"),
+    ]
+    funnel = adjudication_funnel(verdicts)
+    assert funnel.unmatched_recordings == 2
+    assert funnel.rows_in == 2
+    assert funnel.dismissed == 0
+    assert funnel.escalated == 0
+    assert funnel.errored == 0
+    assert funnel.passed_through is False
+    buf = StringIO()
+    print_adjudication_funnel(buf, rows_in=2, rows_out=2, verdicts=verdicts)
+    text = buf.getvalue()
+    assert int(_value(text, "adjudication unmatched_recordings")) == 2
+    assert int(_value(text, "adjudication in")) == 2
+    assert "no recording:" in text
+    assert "2 candidates had no matching recording" in text
+    assert "adjudication: passed through untouched" not in text
+    assert "survivors after adjudication: 2" in text
+
+
+def test_mixed_adjudication_counts_sum_to_residual() -> None:
+    verdicts = [
+        _verdict(
+            "d",
+            VerdictOutcome.dismiss,
+            "monthly",
+            ExplanationType.recurring,
+        ),
+        _verdict("e", VerdictOutcome.escalate, "looks recoverable"),
+        _verdict("err", VerdictOutcome.errored, "schema failed"),
+        _verdict("u", VerdictOutcome.errored, "no recording: missing cassette"),
+    ]
+    funnel = adjudication_funnel(verdicts)
+    assert funnel.dismissed == 1
+    assert funnel.escalated == 1
+    assert funnel.errored == 1
+    assert funnel.unmatched_recordings == 1
+    assert funnel.rows_in == 4
+    assert funnel.passed_through is False
+    buf = StringIO()
+    print_adjudication_funnel(buf, rows_in=4, rows_out=3, verdicts=verdicts)
+    text = buf.getvalue()
+    total = (
+        int(_value(text, "adjudication dismissed"))
+        + int(_value(text, "adjudication escalated"))
+        + int(_value(text, "adjudication errored"))
+        + int(_value(text, "adjudication unmatched_recordings"))
+    )
+    assert total == 4
+    assert total == int(_value(text, "adjudication in"))
+    assert "adjudication: passed through untouched" not in text
+    assert "no recording: 1 candidates had no matching recording" in text
+    assert _value(text, "survivors after adjudication") == "3"
+
+
+def test_all_escalated_adjudication_is_passthrough() -> None:
+    verdicts = [
+        _verdict("a", VerdictOutcome.escalate, "keep"),
+        _verdict("b", VerdictOutcome.escalate, "keep"),
+    ]
+    funnel = adjudication_funnel(verdicts)
+    assert funnel.passed_through is True
+    assert funnel.escalated == 2
+    buf = StringIO()
+    print_adjudication_funnel(buf, rows_in=2, rows_out=2, verdicts=verdicts)
+    text = buf.getvalue()
+    assert "adjudication: passed through untouched" in text
+    assert "no recording: 0 candidates had no matching recording" in text
+
+
+def test_demo_all_residual_missing_recordings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    csv_path, map_path = _duplicate_ledger(tmp_path)
+
+    async def fake_adjudicate(
+        residual: list[Candidate],
+        _ledger: object,
+        _settings: object,
+    ) -> list[Verdict]:
+        return [
+            _verdict(
+                item.candidate_id,
+                VerdictOutcome.errored,
+                "no recording: test miss",
+            )
+            for item in residual
+        ]
+
+    monkeypatch.setattr(run_demo, "adjudicate", fake_adjudicate)
+    text = _run(source=str(csv_path), map_path=str(map_path))
+    rows_in = int(_value(text, "adjudication in"))
+    unmatched = int(_value(text, "adjudication unmatched_recordings"))
+    assert rows_in >= 1
+    assert unmatched == rows_in
+    assert "no recording:" in text
+    assert "adjudication: passed through untouched" not in text
+    assert _value(text, "survivors after adjudication") == str(rows_in)
+
+
+def test_aggregate_collapse_is_not_passthrough() -> None:
+    buf = StringIO()
+    print_aggregate_funnel(buf, 5, 3)
+    text = buf.getvalue()
+    assert _value(text, "aggregate in") == "5"
+    assert _value(text, "aggregate out") == "3"
+    assert _value(text, "aggregate collapsed") == "2"
+    assert "passed through untouched" not in text
+    assert _value(text, "transactions after aggregation") == "3"
+
+
+def test_dismissal_zero_is_passthrough() -> None:
+    buf = StringIO()
+    print_dismissal_funnel(buf, 4, [], [])
+    text = buf.getvalue()
+    assert _value(text, "dismissal in") == "4"
+    assert _value(text, "dismissal out") == "0"
+    assert _value(text, "dismissal") == "passed through untouched"
+    assert _value(text, "survivors after deterministic dismissal") == "0"
 
 
 def test_makefile_demo_targets() -> None:

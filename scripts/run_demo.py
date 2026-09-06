@@ -15,6 +15,7 @@ import json
 import logging
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -37,6 +38,12 @@ from core.models import Candidate, Transaction, Verdict, VerdictOutcome
 from core.normalize import canonical_invoice, canonical_vendor
 from core.settings import Settings, load_settings
 
+try:
+    from agents.adjudicate import is_unmatched_recording, summarise_adjudication
+except ImportError:
+    is_unmatched_recording = None
+    summarise_adjudication = None
+
 ROOT = Path(__file__).resolve().parent.parent
 LA_SAMPLE = ROOT / "data" / "samples" / "la_sample.csv"
 OK_SAMPLE = ROOT / "data" / "samples" / "ok_sample.csv"
@@ -55,6 +62,8 @@ FUNNEL_CANDIDATES = "candidates after blocking"
 FUNNEL_AFTER_DISMISS = "survivors after deterministic dismissal"
 FUNNEL_AFTER_ADJUDICATE = "survivors after adjudication"
 FUNNEL_DOLLARS = "dollars at risk"
+FUNNEL_NO_RECORDING = "no recording"
+PASSED_THROUGH = "passed through untouched"
 
 
 class DemoError(Exception):
@@ -67,6 +76,23 @@ class ResolvedSource:
     path: Path
     adapter: Adapter
     encoding: str
+
+
+@dataclass(frozen=True, slots=True)
+class AdjudicationFunnel:
+    """Four-way Stage 5 counts. errored is genuine failures only."""
+
+    dismissed: int
+    escalated: int
+    errored: int
+    unmatched_recordings: int
+    passed_through: bool
+
+    @property
+    def rows_in(self) -> int:
+        return (
+            self.dismissed + self.escalated + self.errored + self.unmatched_recordings
+        )
 
 
 def display_path(path: Path, root: Path | None = None) -> str:
@@ -330,6 +356,124 @@ def emit(out: TextIO, label: str, value: object) -> None:
     print(f"{label}: {value}", file=out, flush=True)
 
 
+def _fallback_is_unmatched_recording(verdict: Verdict) -> bool:
+    """Unmatched iff reasoning starts with 'no recording:' or contains 'no cassette'."""
+    reasoning = verdict.reasoning
+    return reasoning.startswith("no recording:") or "no cassette" in reasoning
+
+
+def _count_adjudication_locally(verdicts: Sequence[Verdict]) -> AdjudicationFunnel:
+    unmatched_fn = (
+        is_unmatched_recording
+        if is_unmatched_recording is not None
+        else _fallback_is_unmatched_recording
+    )
+    dismissed = 0
+    escalated = 0
+    genuine_errored = 0
+    unmatched = 0
+    for item in verdicts:
+        if unmatched_fn(item):
+            unmatched += 1
+            continue
+        if item.verdict is VerdictOutcome.dismiss:
+            dismissed += 1
+        elif item.verdict is VerdictOutcome.escalate:
+            escalated += 1
+        elif item.verdict is VerdictOutcome.errored:
+            genuine_errored += 1
+    return AdjudicationFunnel(
+        dismissed=dismissed,
+        escalated=escalated,
+        errored=genuine_errored,
+        unmatched_recordings=unmatched,
+        passed_through=dismissed == 0 and genuine_errored == 0 and unmatched == 0,
+    )
+
+
+def adjudication_funnel(verdicts: Sequence[Verdict]) -> AdjudicationFunnel:
+    """Return dismissed, escalated, genuine errored, unmatched. Sum equals len(verdicts)."""
+    if summarise_adjudication is None or is_unmatched_recording is None:
+        return _count_adjudication_locally(verdicts)
+    summary = summarise_adjudication(verdicts)
+    unmatched = sum(1 for item in verdicts if is_unmatched_recording(item))
+    dismissed = int(summary.dismissed)
+    escalated = int(summary.escalated)
+    errored = int(summary.errored)
+    return AdjudicationFunnel(
+        dismissed=dismissed,
+        escalated=escalated,
+        errored=errored,
+        unmatched_recordings=unmatched,
+        passed_through=dismissed == 0 and errored == 0 and unmatched == 0,
+    )
+
+
+def print_aggregate_funnel(out: TextIO, rows_in: int, rows_out: int) -> None:
+    """Print aggregate in/out and collapsed count, or pass-through when unchanged."""
+    emit(out, "aggregate in", rows_in)
+    emit(out, "aggregate out", rows_out)
+    if rows_in == rows_out:
+        emit(out, "aggregate", PASSED_THROUGH)
+    else:
+        emit(out, "aggregate collapsed", rows_in - rows_out)
+    emit(out, FUNNEL_TRANSACTIONS, rows_out)
+
+
+def print_blocking_funnel(
+    out: TextIO, rows_in: int, candidates: Sequence[Candidate]
+) -> None:
+    """Print blocking in/out and a count for each candidate.signal."""
+    emit(out, "blocking in", rows_in)
+    emit(out, "blocking out", len(candidates))
+    counts = Counter(item.signal.value for item in candidates)
+    for signal_name in sorted(counts):
+        emit(out, f"blocking {signal_name}", counts[signal_name])
+    emit(out, FUNNEL_CANDIDATES, len(candidates))
+
+
+def print_dismissal_funnel(
+    out: TextIO,
+    rows_in: int,
+    residual: Sequence[Candidate],
+    dismissed: Sequence[Verdict],
+) -> None:
+    """Print dismissal in/out and dismissed counts by explanation_type."""
+    emit(out, "dismissal in", rows_in)
+    emit(out, "dismissal out", len(residual))
+    counts = Counter(item.explanation_type.value for item in dismissed)
+    for name in sorted(counts):
+        emit(out, f"dismissal {name}", counts[name])
+    if len(dismissed) == 0:
+        emit(out, "dismissal", PASSED_THROUGH)
+    emit(out, FUNNEL_AFTER_DISMISS, len(residual))
+
+
+def print_adjudication_funnel(
+    out: TextIO,
+    *,
+    rows_in: int,
+    rows_out: int,
+    verdicts: Sequence[Verdict],
+) -> None:
+    """Print Stage 5 in/out, four-way counts, unmatched recordings, and survivors."""
+    funnel = adjudication_funnel(verdicts)
+    emit(out, "adjudication in", rows_in)
+    emit(out, "adjudication out", rows_out)
+    emit(out, "adjudication dismissed", funnel.dismissed)
+    emit(out, "adjudication escalated", funnel.escalated)
+    emit(out, "adjudication errored", funnel.errored)
+    emit(out, "adjudication unmatched_recordings", funnel.unmatched_recordings)
+    if funnel.passed_through:
+        emit(out, "adjudication", PASSED_THROUGH)
+    emit(
+        out,
+        FUNNEL_NO_RECORDING,
+        f"{funnel.unmatched_recordings} candidates had no matching recording",
+    )
+    emit(out, FUNNEL_AFTER_ADJUDICATE, rows_out)
+
+
 def print_header(
     out: TextIO,
     *,
@@ -382,18 +526,23 @@ def run_demo(
         emit(out, FUNNEL_ROWS_IN, len(rows))
 
         aggregated = aggregate(rows)
-        emit(out, FUNNEL_TRANSACTIONS, len(aggregated))
+        print_aggregate_funnel(out, len(rows), len(aggregated))
 
         normalised = normalise_transactions(aggregated)
         candidates = block(normalised, resolved.adapter.capabilities, cfg)
-        emit(out, FUNNEL_CANDIDATES, len(candidates))
+        print_blocking_funnel(out, len(aggregated), candidates)
 
-        residual, _dismissed = dismiss(candidates, normalised)
-        emit(out, FUNNEL_AFTER_DISMISS, len(residual))
+        residual, dismissed = dismiss(candidates, normalised)
+        print_dismissal_funnel(out, len(candidates), residual, dismissed)
 
         verdicts = asyncio.run(adjudicate(residual, normalised, cfg))
         surviving = survivors_after_adjudication(residual, verdicts)
-        emit(out, FUNNEL_AFTER_ADJUDICATE, len(surviving))
+        print_adjudication_funnel(
+            out,
+            rows_in=len(residual),
+            rows_out=len(surviving),
+            verdicts=verdicts,
+        )
         emit(out, FUNNEL_DOLLARS, format_money(dollars_at_risk(surviving)))
         snapshot = build_generated_queue(
             rows_in=len(rows),
