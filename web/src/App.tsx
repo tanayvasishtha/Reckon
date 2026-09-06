@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchCandidate, fetchQueue, fetchStats, postDecision } from "./api";
+import type { DecisionFormHandle } from "./DecisionForm";
 import { FindingPane } from "./FindingPane";
 import { Header } from "./Header";
 import { QueuePane } from "./QueuePane";
@@ -15,6 +16,11 @@ export function App() {
   const [decideError, setDecideError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [findingLoading, setFindingLoading] = useState(false);
+  const decisionFormRef = useRef<DecisionFormHandle>(null);
+  const queueRef = useRef(queue);
+  const selectedIdRef = useRef(selectedId);
+  queueRef.current = queue;
+  selectedIdRef.current = selectedId;
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +76,58 @@ export function App() {
       cancelled = true;
     };
   }, [selectedId]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        decisionFormRef.current?.closeReason();
+        return;
+      }
+      if (isTextEntryTarget(event.target)) {
+        return;
+      }
+      const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+      if (key === "j" || key === "ArrowDown") {
+        event.preventDefault();
+        moveSelection(1);
+        return;
+      }
+      if (key === "k" || key === "ArrowUp") {
+        event.preventDefault();
+        moveSelection(-1);
+        return;
+      }
+      if (key === "c") {
+        event.preventDefault();
+        decisionFormRef.current?.openReason("confirmed");
+        return;
+      }
+      if (key === "d") {
+        event.preventDefault();
+        decisionFormRef.current?.openReason("dismissed");
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  function moveSelection(delta: number) {
+    const items = queueRef.current;
+    if (items === null || items.length === 0) {
+      return;
+    }
+    const current = selectedIdRef.current;
+    const index = items.findIndex((item) => item.candidate_id === current);
+    const from = index < 0 ? 0 : index;
+    const next = Math.min(items.length - 1, Math.max(0, from + delta));
+    setSelectedId(items[next].candidate_id);
+  }
 
   const selected = queue?.find((item) => item.candidate_id === selectedId) ?? null;
 
@@ -131,6 +189,7 @@ export function App() {
           busy={busy}
           error={decideError}
           onDecide={onDecide}
+          formRef={decisionFormRef}
         />
       </div>
     </div>
@@ -142,4 +201,30 @@ function asMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  const tag = target.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") {
+    return true;
+  }
+  if (tag !== "INPUT") {
+    return false;
+  }
+  const type = (target as HTMLInputElement).type;
+  return (
+    type !== "button" &&
+    type !== "checkbox" &&
+    type !== "radio" &&
+    type !== "submit" &&
+    type !== "reset" &&
+    type !== "hidden" &&
+    type !== "file"
+  );
 }

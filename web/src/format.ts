@@ -22,6 +22,13 @@ export function formatPercent(value: number): string {
   return `${Math.round(clamped * 100)}%`;
 }
 
+export function formatVerdict(verdict: string): string {
+  if (verdict === "errored") {
+    return "Errored, not guessed";
+  }
+  return verdict.charAt(0).toUpperCase() + verdict.slice(1);
+}
+
 export function displayValue(value: string | number | null | undefined): string {
   if (value == null || value === "") {
     return "—";
