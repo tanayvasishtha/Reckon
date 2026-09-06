@@ -12,9 +12,15 @@ from pathlib import Path
 import httpx
 import pytest
 
-from agents.adjudicate import AdjudicationError, adjudicate
-from agents.cassettes import save_cassette
-from agents.llm import ModelClient, build_request
+from agents.adjudicate import (
+    AdjudicationError,
+    AdjudicationSummary,
+    adjudicate,
+    is_unmatched_recording,
+    summarise_adjudication,
+)
+from agents.cassettes import CassetteError, save_cassette
+from agents.llm import ModelClient, ModelError, build_request
 from agents.prompts import STABLE_INSTRUCTIONS, build_messages
 from core.models import (
     Candidate,
@@ -377,6 +383,30 @@ async def _run_recorded(
     )
 
 
+def _flatten_rows(
+    rows: Sequence[tuple[Candidate, Transaction, Transaction, tuple[Transaction, ...]]],
+) -> tuple[list[Candidate], list[Transaction]]:
+    candidates = [item[0] for item in rows]
+    transactions: list[Transaction] = []
+    for _candidate, left, right, related in rows:
+        transactions.extend((left, right, *related))
+    return candidates, transactions
+
+
+def _assert_summary_invariants(summary: AdjudicationSummary) -> None:
+    assert summary.rows_in == (
+        summary.dismissed
+        + summary.escalated
+        + summary.errored
+        + summary.unmatched_recordings
+    )
+    assert summary.passed_through is (
+        summary.dismissed == 0
+        and summary.errored == 0
+        and summary.unmatched_recordings == 0
+    )
+
+
 def test_stable_instructions_include_invoice_sum_test() -> None:
     assert "sum to the invoice amount" in STABLE_INSTRUCTIONS
 
@@ -554,7 +584,230 @@ async def test_missing_cassette_marks_errored_and_stays_in_results(
     )
     assert len(verdicts) == 1
     assert verdicts[0].verdict is VerdictOutcome.errored
+    assert verdicts[0].reasoning.startswith("no recording:")
     assert "no cassette" in verdicts[0].reasoning
+
+
+async def test_missing_cassette_counts_as_unmatched_not_genuine_errored(
+    tmp_path: Path,
+) -> None:
+    candidate, left, right, _related = _case(ExplanationType.cancelled)
+    verdicts = await adjudicate(
+        [candidate],
+        [left, right],
+        _settings(),
+        cassette_dir=tmp_path,
+    )
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.rows_in == 1
+    assert summary.unmatched_recordings == 1
+    assert summary.errored == 0
+    assert summary.passed_through is False
+    assert is_unmatched_recording(verdicts[0]) is True
+
+
+async def test_schema_failure_counts_as_genuine_errored_not_unmatched(
+    tmp_path: Path,
+) -> None:
+    candidate, left, right, related = _case(ExplanationType.cancelled)
+    messages = build_messages(candidate, left, right, related=related)
+    _record(
+        tmp_path,
+        messages,
+        FAST_MODEL,
+        None,
+        raw_content=json.dumps({"verdict": "dismiss"}),
+    )
+    verdicts = await adjudicate(
+        [candidate],
+        [left, right],
+        _settings(),
+        cassette_dir=tmp_path,
+    )
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.rows_in == 1
+    assert summary.errored == 1
+    assert summary.unmatched_recordings == 0
+    assert summary.passed_through is False
+    assert is_unmatched_recording(verdicts[0]) is False
+    assert not verdicts[0].reasoning.startswith("no recording:")
+
+
+async def test_mixed_batch_four_outcomes_sum_to_rows_in(tmp_path: Path) -> None:
+    dismiss_row = _case(ExplanationType.cancelled)
+    escalate_row = _case(ExplanationType.different_po)
+    schema_row = _case(ExplanationType.partial_pair)
+    miss_row = _case(ExplanationType.progress_payment)
+    _record(
+        tmp_path,
+        build_messages(
+            dismiss_row[0], dismiss_row[1], dismiss_row[2], related=dismiss_row[3]
+        ),
+        FAST_MODEL,
+        _judgement(
+            dismiss_row[0].candidate_id,
+            verdict="dismiss",
+            explanation_type="cancelled",
+            confidence=0.91,
+        ),
+    )
+    _record(
+        tmp_path,
+        build_messages(
+            escalate_row[0],
+            escalate_row[1],
+            escalate_row[2],
+            related=escalate_row[3],
+        ),
+        FAST_MODEL,
+        _judgement(
+            escalate_row[0].candidate_id,
+            verdict="escalate",
+            explanation_type="none",
+            confidence=0.88,
+        ),
+    )
+    _record(
+        tmp_path,
+        build_messages(
+            schema_row[0], schema_row[1], schema_row[2], related=schema_row[3]
+        ),
+        FAST_MODEL,
+        None,
+        raw_content=json.dumps({"verdict": "dismiss"}),
+    )
+    rows = (dismiss_row, escalate_row, schema_row, miss_row)
+    candidates, transactions = _flatten_rows(rows)
+    verdicts = await adjudicate(
+        candidates, transactions, _settings(), cassette_dir=tmp_path
+    )
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.rows_in == 4
+    assert summary.dismissed == 1
+    assert summary.escalated == 1
+    assert summary.errored == 1
+    assert summary.unmatched_recordings == 1
+    assert (
+        summary.dismissed
+        + summary.escalated
+        + summary.errored
+        + summary.unmatched_recordings
+        == 4
+    )
+    assert summary.passed_through is False
+    by_id = {item.candidate_id: item for item in verdicts}
+    assert by_id[dismiss_row[0].candidate_id].verdict is VerdictOutcome.dismiss
+    assert by_id[escalate_row[0].candidate_id].verdict is VerdictOutcome.escalate
+    assert by_id[schema_row[0].candidate_id].verdict is VerdictOutcome.errored
+    assert is_unmatched_recording(by_id[schema_row[0].candidate_id]) is False
+    assert is_unmatched_recording(by_id[miss_row[0].candidate_id]) is True
+
+
+async def test_all_escalate_is_passed_through(tmp_path: Path) -> None:
+    rows = (
+        _case(ExplanationType.cancelled),
+        _case(ExplanationType.different_po),
+        _case(ExplanationType.partial_pair),
+    )
+    for candidate, left, right, related in rows:
+        _record(
+            tmp_path,
+            build_messages(candidate, left, right, related=related),
+            FAST_MODEL,
+            _judgement(
+                candidate.candidate_id,
+                verdict="escalate",
+                explanation_type="none",
+                confidence=0.88,
+            ),
+        )
+    candidates, transactions = _flatten_rows(rows)
+    verdicts = await adjudicate(
+        candidates, transactions, _settings(), cassette_dir=tmp_path
+    )
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.rows_in == 3
+    assert summary.escalated == 3
+    assert summary.dismissed == 0
+    assert summary.errored == 0
+    assert summary.unmatched_recordings == 0
+    assert summary.passed_through is True
+    assert all(item.verdict is VerdictOutcome.escalate for item in verdicts)
+
+
+async def test_all_missing_cassette_is_not_passed_through(tmp_path: Path) -> None:
+    rows = (
+        _case(ExplanationType.cancelled),
+        _case(ExplanationType.different_po),
+        _case(ExplanationType.partial_pair),
+    )
+    candidates, transactions = _flatten_rows(rows)
+    verdicts = await adjudicate(
+        candidates, transactions, _settings(), cassette_dir=tmp_path
+    )
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.rows_in == len(verdicts)
+    assert summary.unmatched_recordings == summary.rows_in
+    assert summary.errored == 0
+    assert summary.dismissed == 0
+    assert summary.escalated == 0
+    assert summary.passed_through is False
+    assert all(item.verdict is VerdictOutcome.errored for item in verdicts)
+    assert all(is_unmatched_recording(item) for item in verdicts)
+
+
+async def test_replay_miss_type_name_is_unmatched_without_importing_class() -> None:
+    class ReplayMissError(ModelError):
+        pass
+
+    class _Client:
+        async def complete(self, *_args: object, **_kwargs: object) -> object:
+            raise ReplayMissError("payload hash missed the cassette store")
+
+    candidate, left, right, _related = _case(ExplanationType.cancelled)
+    verdicts = await adjudicate(
+        [candidate],
+        [left, right],
+        _settings(),
+        client=_Client(),  # type: ignore[arg-type]
+    )
+    assert len(verdicts) == 1
+    assert verdicts[0].verdict is VerdictOutcome.errored
+    assert verdicts[0].reasoning.startswith("no recording:")
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.unmatched_recordings == 1
+    assert summary.errored == 0
+    assert summary.passed_through is False
+
+
+async def test_cassette_error_cause_is_unmatched_without_no_cassette_text() -> None:
+    class _Client:
+        async def complete(self, *_args: object, **_kwargs: object) -> object:
+            try:
+                raise CassetteError("hashed request does not match stored cassette")
+            except CassetteError as exc:
+                raise ModelError("replay failed") from exc
+
+    candidate, left, right, _related = _case(ExplanationType.cancelled)
+    verdicts = await adjudicate(
+        [candidate],
+        [left, right],
+        _settings(),
+        client=_Client(),  # type: ignore[arg-type]
+    )
+    assert verdicts[0].verdict is VerdictOutcome.errored
+    assert is_unmatched_recording(verdicts[0]) is True
+    assert verdicts[0].reasoning.startswith("no recording:")
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.unmatched_recordings == 1
+    assert summary.errored == 0
 
 
 async def test_missing_transaction_marks_errored(tmp_path: Path) -> None:
@@ -567,6 +820,12 @@ async def test_missing_transaction_marks_errored(tmp_path: Path) -> None:
     )
     assert verdicts[0].verdict is VerdictOutcome.errored
     assert "missing" in verdicts[0].reasoning
+    assert not verdicts[0].reasoning.startswith("no recording:")
+    assert is_unmatched_recording(verdicts[0]) is False
+    summary = summarise_adjudication(verdicts)
+    _assert_summary_invariants(summary)
+    assert summary.errored == 1
+    assert summary.unmatched_recordings == 0
 
 
 async def test_results_are_sorted_by_candidate_id(tmp_path: Path) -> None:
