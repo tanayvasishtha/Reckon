@@ -68,15 +68,20 @@ a person actually reviews it.
 
 Seven stages. Only one of them calls a model.
 
-| Stage | What it does | Model? |
+| Stage | What it does | Runs on |
 |---|---|---|
-| 1. Aggregate | Collapse invoice distribution lines onto transaction grain | no |
-| 2. Normalise | Canonicalise vendor names and invoice numbers | no |
-| 3. Block | Generate candidate pairs, hash-bucketed | no |
-| 4. Dismiss | Remove what a rule can prove innocent | no |
-| 5. Adjudicate | Weigh the judgement cases | **yes** |
-| 6. Review | Escalate to a named approver with evidence | human |
-| 7. Package | Recovery letter, journal entry, audit trail | no |
+| 1. Aggregate | Collapse invoice distribution lines onto transaction grain | plain Python |
+| 2. Normalise | Canonicalise vendor names and invoice numbers | plain Python |
+| 3. Block | Generate candidate pairs, hash-bucketed | plain Python |
+| 4. Dismiss | Remove what a rule can prove innocent | plain Python |
+| 5. Adjudicate | Weigh the cases that need judgement | **a model** |
+| 6. Review | Escalate to a named approver with evidence | **a person** |
+| 7. Package | Recovery letter, journal entry, audit trail | plain Python |
+
+The shape matters. Four cheap deterministic stages carry all the volume, one
+model call handles only what is genuinely ambiguous, and a person makes the
+final call. Running a model over every pair would be slower, cost more, and be
+no more accurate.
 
 Stages 1 to 4 clear the volume in under thirty seconds. Stage 5 sees only
 what is left.
@@ -134,6 +139,22 @@ ledger.csv
 The Los Angeles ledger carries a publisher-assigned `vendor_id`. Canonical
 vendor grouping is scored against it, so this number is measured against
 someone else's labels rather than graded by a model.
+
+### What "rules only" means
+
+Everything below is measured against a baseline, so it is worth being precise
+about what that baseline is.
+
+Rules only is this same pipeline with stage 5 removed. Identical aggregation,
+identical vendor matching, identical blocking, identical deterministic
+dismissals, and then everything still standing gets reported as a finding.
+That is what a conventional duplicate-payment tool does, and what a finance
+team would build in SQL.
+
+It is deliberately not a strawman. It shares stages 1 to 4 with Reckon by
+importing the same modules, so the only difference between the two columns is
+whether an agent weighed the remaining cases. Any gap is attributable to that
+and nothing else.
 
 ### Baseline against Reckon, identical data
 
