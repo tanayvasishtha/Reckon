@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from adapters.base import AdapterError
+from api.schemas import FixtureFile
 from core.models import (
     Candidate,
     ExplanationType,
@@ -42,6 +44,13 @@ PARTIAL_MAP = FIXTURES / "generic_partial.yaml"
 def _replay_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("RECKON_API_KEY", raising=False)
     monkeypatch.delenv("RECKON_API_BASE", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def generated_queue_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    path = tmp_path / "data" / "generated" / "queue.json"
+    monkeypatch.setattr(run_demo, "GENERATED_QUEUE_PATH", path)
+    return path
 
 
 @pytest.fixture
@@ -77,6 +86,89 @@ def _value(text: str, label: str) -> str:
         if line.startswith(prefix):
             return line.split(":", 1)[1].strip()
     raise AssertionError(f"missing {label!r} in:\n{text}")
+
+
+def test_demo_writes_generated_queue(tiny_la: Path, generated_queue_path: Path) -> None:
+    text = _run()
+    assert generated_queue_path.is_file()
+    raw_text = generated_queue_path.read_text(encoding="utf-8")
+    payload = json.loads(raw_text)
+    assert raw_text == json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    fixture = FixtureFile.model_validate(payload)
+    assert fixture.funnel.candidates == int(_value(text, "candidates after blocking"))
+    assert fixture.funnel.rows_in == int(_value(text, "rows in"))
+    assert fixture.funnel.transactions == int(
+        _value(text, "transactions after aggregation")
+    )
+    assert fixture.funnel.after_dismiss == int(
+        _value(text, "survivors after deterministic dismissal")
+    )
+    assert fixture.funnel.after_adjudicate == int(
+        _value(text, "survivors after adjudication")
+    )
+    ids = [item.candidate.candidate_id for item in fixture.findings]
+    assert ids == sorted(ids)
+    for finding in fixture.findings:
+        assert finding.verdict.verdict in {
+            VerdictOutcome.escalate,
+            VerdictOutcome.errored,
+        }
+        left_id, right_id = finding.candidate.transaction_ids
+        assert finding.left.transaction_id == left_id
+        assert finding.right.transaction_id == right_id
+        assert isinstance(payload["funnel"]["candidates"], int)
+    money_blob = json.dumps(payload)
+    assert "e+" not in money_blob.lower()
+
+
+def test_demo_queue_findings_match_survivors(
+    tmp_path: Path, generated_queue_path: Path
+) -> None:
+    csv_path = tmp_path / "dups.csv"
+    csv_path.write_text(
+        "txn_id,vendor_name,amount,invoice_number\n"
+        "a,Acme LLC,1250.50,INV-1\n"
+        "b,Acme LLC,1250.50,INV-1\n",
+        encoding="utf-8",
+    )
+    map_path = tmp_path / "map.yaml"
+    map_path.write_text(
+        "encoding: utf-8\n"
+        "columns:\n"
+        "  transaction_id: txn_id\n"
+        "  vendor_name_raw: vendor_name\n"
+        "  amount: amount\n"
+        "  invoice_number_raw: invoice_number\n",
+        encoding="utf-8",
+    )
+    text = _run(source=str(csv_path), map_path=str(map_path))
+    fixture = FixtureFile.model_validate_json(
+        generated_queue_path.read_text(encoding="utf-8")
+    )
+    blocking = int(_value(text, "candidates after blocking"))
+    residual = int(_value(text, "survivors after deterministic dismissal"))
+    surviving = int(_value(text, "survivors after adjudication"))
+    assert fixture.funnel.candidates == blocking
+    assert fixture.funnel.after_dismiss == residual
+    assert fixture.funnel.after_adjudicate == surviving
+    assert len(fixture.findings) == surviving
+    assert surviving >= 1
+    raw = json.loads(generated_queue_path.read_text(encoding="utf-8"))
+    for finding in raw["findings"]:
+        assert isinstance(finding["candidate"]["amount_at_risk"], str)
+        assert isinstance(finding["left"]["amount"], str)
+        assert isinstance(finding["right"]["amount"], str)
+        Decimal(finding["candidate"]["amount_at_risk"])
+
+
+def test_write_generated_queue_failure_is_demo_error(
+    tmp_path: Path, tiny_la: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blocked = tmp_path / "not-a-dir"
+    blocked.write_text("file", encoding="utf-8")
+    monkeypatch.setattr(run_demo, "GENERATED_QUEUE_PATH", blocked / "queue.json")
+    with pytest.raises(DemoError, match="could not write"):
+        run_demo.run_demo(output=StringIO())
 
 
 def test_header_prints_before_funnel(tiny_la: Path) -> None:

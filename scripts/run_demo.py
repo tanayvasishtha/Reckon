@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import json
 import logging
 import subprocess
 import sys
@@ -28,6 +29,7 @@ from adapters.oklahoma import ENCODING as OK_ENCODING
 from adapters.oklahoma import OklahomaAdapter
 from agents.adjudicate import AdjudicationError, adjudicate
 from agents.llm import LIVE_MODE, REPLAY_MODE, mode_for
+from api.schemas import FixtureFile, FixtureFinding, FunnelSnapshot
 from core.aggregate import AggregateError, aggregate
 from core.blocking import BlockingError, block
 from core.dismiss import dismiss
@@ -38,6 +40,9 @@ from core.settings import Settings, load_settings
 ROOT = Path(__file__).resolve().parent.parent
 LA_SAMPLE = ROOT / "data" / "samples" / "la_sample.csv"
 OK_SAMPLE = ROOT / "data" / "samples" / "ok_sample.csv"
+GENERATED_QUEUE_PATH = ROOT / "data" / "generated" / "queue.json"
+
+_IN_QUEUE = frozenset({VerdictOutcome.escalate, VerdictOutcome.errored})
 
 NAMED_LA = frozenset({"", "la", "los-angeles", "los_angeles"})
 NAMED_OK = frozenset({"oklahoma", "ok"})
@@ -239,6 +244,74 @@ def survivors_after_adjudication(
     return [item for item in residual if item.candidate_id not in dismissed_ids]
 
 
+def build_generated_queue(
+    *,
+    rows_in: int,
+    transaction_count: int,
+    candidate_count: int,
+    residual_count: int,
+    surviving: Sequence[Candidate],
+    verdicts: Sequence[Verdict],
+    ledger: Sequence[Transaction],
+) -> FixtureFile:
+    """Build a FixtureFile of residual escalate/errored findings, sorted by id."""
+    tx_by_id = {row.transaction_id: row for row in ledger}
+    verdict_by_id = {item.candidate_id: item for item in verdicts}
+    findings: list[FixtureFinding] = []
+    for candidate in surviving:
+        verdict = verdict_by_id.get(candidate.candidate_id)
+        if verdict is None:
+            raise DemoError(
+                f"queue snapshot missing verdict for {candidate.candidate_id}"
+            )
+        if verdict.verdict not in _IN_QUEUE:
+            raise DemoError(
+                f"queue snapshot unexpected verdict {verdict.verdict.value} "
+                f"for {candidate.candidate_id}"
+            )
+        left_id, right_id = candidate.transaction_ids
+        left = tx_by_id.get(left_id)
+        right = tx_by_id.get(right_id)
+        if left is None or right is None:
+            missing = left_id if left is None else right_id
+            raise DemoError(
+                f"queue snapshot missing transaction {missing} "
+                f"for {candidate.candidate_id}"
+            )
+        findings.append(
+            FixtureFinding(
+                candidate=candidate,
+                left=left,
+                right=right,
+                verdict=verdict,
+            )
+        )
+    findings.sort(key=lambda item: item.candidate.candidate_id)
+    return FixtureFile(
+        funnel=FunnelSnapshot(
+            rows_in=rows_in,
+            transactions=transaction_count,
+            candidates=candidate_count,
+            after_dismiss=residual_count,
+            after_adjudicate=len(findings),
+        ),
+        findings=findings,
+    )
+
+
+def write_generated_queue(path: Path, fixture: FixtureFile) -> None:
+    """Write FixtureFile JSON with sorted keys. Fail with one-line DemoError."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.loads(fixture.model_dump_json())
+        serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        path.write_text(serialized, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        raise DemoError(
+            f"could not write {display_path(path)}: {one_line(exc)}"
+        ) from exc
+
+
 def dollars_at_risk(candidates: Iterable[Candidate]) -> Decimal:
     """Sum amount_at_risk as Decimal. Never converts through float."""
     total = Decimal(0)
@@ -322,6 +395,16 @@ def run_demo(
         surviving = survivors_after_adjudication(residual, verdicts)
         emit(out, FUNNEL_AFTER_ADJUDICATE, len(surviving))
         emit(out, FUNNEL_DOLLARS, format_money(dollars_at_risk(surviving)))
+        snapshot = build_generated_queue(
+            rows_in=len(rows),
+            transaction_count=len(aggregated),
+            candidate_count=len(candidates),
+            residual_count=len(residual),
+            surviving=surviving,
+            verdicts=verdicts,
+            ledger=normalised,
+        )
+        write_generated_queue(GENERATED_QUEUE_PATH, snapshot)
     except (
         AdapterError,
         AggregateError,
