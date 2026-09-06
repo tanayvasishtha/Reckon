@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"75\",\"candidate_id\":\"invoice_variant:AD26240000121127:AD26240000121129\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000121127\",\"AD26240000121129\"]},\"related\":[],\"transactions\":[{\"amount\":\"75\",\"department\":\"CANNABIS REGULATION\",\"description\":null,\"distinct_line_amounts\":[\"75\"],\"invoice_amount\":\"75\",\"invoice_canonical\":\"132410013A123\",\"invoice_date\":\"2024-06-14\",\"invoice_number_raw\":\"132410013A123\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE13AE24130008M\",\"transaction_id\":\"AD26240000121127\",\"vendor_canonical\":\"LOSANGELESCOUNTYREGISTRAR\",\"vendor_id\":\"100039050\",\"vendor_name_raw\":\"LOS ANGELES COUNTY REGISTRAR\"},{\"amount\":\"75\",\"department\":\"CANNABIS REGULATION\",\"description\":null,\"distinct_line_amounts\":[\"75\"],\"invoice_amount\":\"75\",\"invoice_canonical\":\"132410013A125\",\"invoice_date\":\"2024-06-14\",\"invoice_number_raw\":\"132410013A125\",\"line_count\":1,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"GAEAE13AE24130008M\",\"transaction_id\":\"AD26240000121129\",\"vendor_canonical\":\"LOSANGELESCOUNTYREGISTRAR\",\"vendor_id\":\"100039050\",\"vendor_name_raw\":\"LOS ANGELES COUNTY REGISTRAR\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n\"candidate_id\": \"invoice_variant:AD26240000121127:AD26240000121129\",\n\"verdict\": \"escalate\",\n\"explanation_type\": \"none\",\n\"reasoning\": \"Both payments are $75 while invoice amounts are $75 each. The total paid ($150) exceeds the invoice amount ($75), indicating a double payment or error rather than a partial or split payment.\",\n\"evidence\": [\n{\"field\": \"amount\", \"values\": [\"75\", \"75\"]},\n{\"field\": \"invoice_amount\", \"values\": [\"75\", \"75\"]},\n{\"field\": \"payment_status\", \"values\": [\"PAID\", \"PAID\"]}\n],\n\"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Goal:** Adjudicate duplicate-payment pairs.\n    *   **Constraints:** Return single JSON object only. \"Kill\" candidates (dismiss), don't raise them (unless escalate). Explain with provided types.\n    *   **Input:** A candidate pair involving two payments for what appears to be the same vendor.\n    *   **Data:**\n        *   Vendor: LOS ANGELES COUNTY REGISTRAR (LOSANGELESCOUNTYREGISTRAR)\n        *   Departments: CANNABIS REGULATION\n        *   Amount: 75\n        *   Dates: 2024-06-14 (Invoice), 2024-06-20 (Payment)\n        *   PO: GAEAE13AE24130008M (Both)\n        *   Invoice Numbers: 132410013A123 vs 132410013A125\n        *   Status: PAID\n        *   Line count: 1, distinct_line_amounts: 75\n        *   Candidate Signal: \"invoice_variant\" (likely refers to slight changes in the invoice number or canonical ID).\n        *   Related: None.\n\n2.  **Evaluate Rules & Hierarchy:**\n    *   *Progress Payment:* Check description for terms like \"Progress payment 3 of 5\". Here, description is null. Unlikely.\n    *   *Recurring:* Check for regular cadence/monthly/amount. Amount is the same (75), dates are the same (Jun 14/20). Possible recurring, but usually requires more context or specific description patterns. Without description, recurring is speculative.\n    *   *Line Split:* One invoice split into two payments. One is 75, the other is 75. The invoice amounts are both 75. The sum of payments (75+75) != one invoice amount (75). Also line count is 1 for each. **Escalate.** (Note: The prompt arithmetic test says \"If the payments together exceed the invoice amount... escalate\". Here, 75+75=150 vs 75. This is definitely escalation, not a split).\n    *   *Partial Pair:* Short payment + remainder. Same logic as line split. 75 + 75 is double the invoice. Not a partial pair.\n    *   *Different PO:* PO numbers are identical \"GAEAE13AE24130008M\".\n    *   *Cancelled:* Status is PAID. Not cancelled.\n\n3.  **Determine Verdict:**\n    *   Both payments are 75. Both invoice amounts are 75. Both are PAID.\n    *   Sum of payments (150) > Invoice amount (75).\n    *   This implies double payment or an error.\n    *   Cannot explain as Line Split (wrong arithmetic).\n    *   Cannot explain as Partial Pair (wrong arithmetic).\n    *   Cannot explain as Different PO (same PO).\n    *   Cannot explain as Recurring without description.\n    *   **Verdict: Escalate.**\n\n4.  **Construct JSON:**\n    *   `candidate_id`: invoice_variant:AD26240000121127:AD26240000121129\n    *   `verdict`: escalate\n    *   `explanation_type`: none\n    *   `reasoning`: Both payments are 75. Invoice amounts are 75. Total payments exceed the invoice amount.\n    *   `evidence`:\n        *   Field: amount (values: [\"75\", \"75\"])\n        *   Field: invoice_amount (values: [\"75\", \"75\"])\n        *   Field: payment_status (values: [\"PAID\", \"PAID\"])\n    *   `confidence`: 1.0 (High certainty due to math discrepancy).\n\n5.  **Review Constraints:**\n    *   Single JSON object? Yes.\n    *   No markdown? Yes.\n    *   No commentary? Yes.\n    *   Keys correct? Yes.\n    *   Explanation type valid? Yes (\"none\" for escalate).\n    *   Arithmetic test applied? Yes. 75+75 > 75.\n\n6.  **Final Output Generation:**\n    ```json\n    {\n      \"candidate_id\": \"invoice_variant:AD26240000121127:AD26240000121129\",\n      \"verdict\": \"escalate\",\n      \"explanation_type\": \"none\",\n      \"reasoning\": \"Both payments are $75, but the invoice amounts are also $75. The total paid ($150) exceeds the invoice amount ($75), indicating double payment or error rather than a legitimate split.\",\n      \"evidence\": [\n        {\"field\": \"amount\", \"values\": [\"75\", \"75\"]},\n        {\"field\": \"invoice_amount\", \"values\": [\"75\", \"75\"]},\n        {\"field\": \"payment_status\", \"values\": [\"PAID\", \"PAID\"]}\n      ],\n      \"confidence\": 1\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788710430,
+    "id": "chatcmpl-8666d92e-8634-4bf8-a947-418d96982a3a",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1191,
+      "prompt_tokens": 1046,
+      "prompt_tokens_details": null,
+      "total_tokens": 2237
+    }
+  }
+}
