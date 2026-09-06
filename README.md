@@ -17,6 +17,23 @@ Runs on real published payment ledgers. Every number below was produced by a
 script in this repository, and every claim about the problem traces to a
 primary source listed in `docs/EVIDENCE.md`.
 
+## Quickstart
+
+```
+git clone https://github.com/tanayvasishtha/Reckon
+cd Reckon
+make demo-fast
+```
+
+The review queue is the committed fixture in `api/fixture.json`.
+
+```
+uv run uvicorn api.main:app --host 127.0.0.1 --port 8000
+npm --prefix web install && npm --prefix web run dev
+```
+
+Open http://127.0.0.1:5173.
+
 ## The problem is precision, not detection
 
 Testing every transaction instead of a sample was solved a decade ago.
@@ -61,7 +78,8 @@ Seven stages. Only one of them calls a model.
 | 6. Review | Escalate to a named approver with evidence | human |
 | 7. Package | Recovery letter, journal entry, audit trail | no |
 
-Stages 1 to 4 clear the volume in milliseconds. Stage 5 sees only what is left.
+Stages 1 to 4 clear the volume in under thirty seconds. Stage 5 sees only
+what is left.
 
 **Blocking is why it finishes.** Comparing every pair across 700,000
 transactions is 2.4 x 10^11 comparisons. Transactions are hashed into buckets
@@ -81,6 +99,27 @@ configured entirely through `RECKON_API_BASE`, `RECKON_API_KEY`,
 `RECKON_MODEL_FAST` and `RECKON_MODEL_ESCALATE`. With no key set it runs
 against recorded cassettes, offline and free, which is the default path for
 anyone cloning this repository.
+
+## Architecture
+
+```
+ledger.csv
+    |
+    v
+[1] Aggregate     collapse invoice distribution lines onto transaction grain    no model
+[2] Normalise     canonicalise vendor names and invoice numbers                 no model
+[3] Block         generate candidate pairs, hash-bucketed                       no model
+[4] Dismiss       remove what a rule can prove innocent                         no model
+    |
+    v
+[5] Adjudicate    weigh the judgement cases                                     MODEL
+    |
+    v
+[6] Review        escalate to a named approver with evidence                    human
+    |
+    v
+[7] Package       recovery letter, journal entry, audit trail                   no model
+```
 
 ## Results
 
@@ -160,6 +199,31 @@ failures could be replayed and inspected rather than reasoned about. And
 failures are surfaced as a distinct verdict rather than dropped, so they were
 countable in the first place.
 
+## Verify this yourself
+
+```
+uv run python -m evaluation.harness
+```
+
+Writes `RESULTS.md` from the labelled eval set. Replay, no key.
+
+- Entity resolution precision, recall, F1: Entity resolution table.
+- Precision, recall, F1, and dollars: Duplicate detection table.
+- Decoy counts: False positives by decoy reason.
+- Errored rate: Cost and runtime. Full pipeline `errored` over rules-only `escalate` (3 of 1,731).
+
+```
+make demo
+```
+
+Funnel on the committed sample. Same replay path.
+
+```
+make test
+```
+
+Includes the 200,000-row blocking budget and two-tier adjudication.
+
 ## What broke
 
 Five failures, named, with what fixed each one.
@@ -207,11 +271,11 @@ work, wrote the briefs, reviewed each diff, ran the checks and merged.
 
 | | |
 |---|---|
-| AO sessions | 24 |
-| Merged units | 16 |
-| Commits | 39 |
+| AO sessions | 31 |
+| Merged units | 20 |
+| Commits | 52 |
 | Python modules | 32 |
-| Tests | 311 |
+| Tests | 330 |
 
 Work was decomposed by file boundary rather than by feature, so parallel
 workers never collided in a worktree merge. The schema in `core/models.py`
