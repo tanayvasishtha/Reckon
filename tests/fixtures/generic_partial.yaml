@@ -1,0 +1,5 @@
+encoding: utf-8
+columns:
+  transaction_id: txn_id
+  vendor_name_raw: vendor_name
+  amount: amount
