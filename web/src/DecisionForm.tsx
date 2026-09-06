@@ -1,16 +1,53 @@
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type FormEvent,
+  type Ref,
+} from "react";
 
 import type { Decision } from "./types";
+
+export type DecisionFormHandle = {
+  openReason: (decision: Decision) => void;
+  closeReason: () => void;
+};
 
 type Props = {
   busy: boolean;
   error: string | null;
   onDecide: (decision: Decision, reason: string) => Promise<void>;
+  formRef?: Ref<DecisionFormHandle | null>;
 };
 
-export function DecisionForm({ busy, error, onDecide }: Props) {
+export function DecisionForm({ busy, error, onDecide, formRef }: Props) {
   const [open, setOpen] = useState<Decision | null>(null);
   const [reason, setReason] = useState("");
+  const openRef = useRef<Decision | null>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  openRef.current = open;
+
+  useImperativeHandle(formRef, () => ({
+    openReason(decision: Decision) {
+      if (openRef.current === decision) {
+        reasonRef.current?.focus();
+        return;
+      }
+      setOpen(decision);
+      setReason("");
+    },
+    closeReason() {
+      setOpen(null);
+      setReason("");
+    },
+  }));
+
+  useEffect(() => {
+    if (open !== null) {
+      reasonRef.current?.focus();
+    }
+  }, [open]);
 
   function toggle(decision: Decision, checked: boolean) {
     if (checked) {
@@ -62,6 +99,7 @@ export function DecisionForm({ busy, error, onDecide }: Props) {
             Reason
           </label>
           <textarea
+            ref={reasonRef}
             id="reason"
             name="reason"
             required
