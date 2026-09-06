@@ -1,9 +1,9 @@
-"""Review-queue HTTP API served from a committed fixture.
+"""Review-queue HTTP API served from demo output or a committed fixture.
 
-Complexity: O(N) to load N fixture findings once, then O(P log P) to
-sort the pending queue of P items on each list request. Lookups and
-writes are keyed on candidate_id. Extra memory is the fixture plus one
-ReviewDecision per decided id. The pipeline is never executed.
+Complexity: O(N) to load N findings once, then O(P log P) to sort the
+pending queue of P items on each list request. Lookups and writes are
+keyed on candidate_id. Extra memory is the loaded snapshot plus one
+ReviewDecision per decided id. The pipeline is never executed at startup.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from api.schemas import (
     CandidateResponse,
+    DataSource,
     DecideRequest,
     FixtureFile,
     FixtureFinding,
@@ -37,7 +38,9 @@ from core.models import (
 
 log = logging.getLogger("api")
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixture.json"
+GENERATED_QUEUE_PATH = _REPO_ROOT / "data" / "generated" / "queue.json"
 
 _IN_QUEUE = frozenset({VerdictOutcome.escalate, VerdictOutcome.errored})
 
@@ -205,31 +208,65 @@ def json_response(model: BaseModel, status_code: int = 200) -> JSONResponse:
     )
 
 
-class Store:
-    """In-memory queue loaded from the committed fixture."""
+def _read_fixture_file(path: Path) -> FixtureFile:
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"queue fixture not found: {path.as_posix()}. "
+            "Commit api/fixture.json so the UI can run without the pipeline."
+        )
+    return FixtureFile.model_validate_json(path.read_text(encoding="utf-8"))
 
-    def __init__(self, fixture: FixtureFile) -> None:
+
+def _try_load_generated(path: Path) -> FixtureFile | None:
+    if not path.is_file():
+        return None
+    try:
+        return FixtureFile.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log.warning(
+            "generated queue unreadable path=%s err=%s; using fixture",
+            path.as_posix(),
+            exc,
+        )
+        return None
+
+
+class Store:
+    """In-memory queue loaded from demo output or the committed fixture."""
+
+    def __init__(self, fixture: FixtureFile, *, data_source: DataSource) -> None:
         self.funnel = fixture.funnel
+        self.data_source = data_source
         self.findings: dict[str, FixtureFinding] = {}
         for finding in fixture.findings:
             self.findings[finding.candidate.candidate_id] = finding
         self.decisions: dict[str, ReviewDecision] = {}
 
     @classmethod
-    def load(cls, path: Path) -> Store:
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"queue fixture not found: {path.as_posix()}. "
-                "Commit api/fixture.json so the UI can run without the pipeline."
-            )
-        payload = FixtureFile.model_validate_json(path.read_text(encoding="utf-8"))
-        store = cls(payload)
+    def load(cls, path: Path, *, data_source: DataSource = "fixture") -> Store:
+        payload = _read_fixture_file(path)
+        store = cls(payload, data_source=data_source)
         log.info(
-            "loaded fixture findings=%s path=%s",
+            "loaded queue source=%s findings=%s path=%s",
+            store.data_source,
             len(store.findings),
             path.as_posix(),
         )
         return store
+
+    @classmethod
+    def load_default(cls) -> Store:
+        generated = _try_load_generated(GENERATED_QUEUE_PATH)
+        if generated is not None:
+            store = cls(generated, data_source="pipeline")
+            log.info(
+                "loaded queue source=%s findings=%s path=%s",
+                store.data_source,
+                len(store.findings),
+                GENERATED_QUEUE_PATH.as_posix(),
+            )
+            return store
+        return cls.load(FIXTURE_PATH, data_source="fixture")
 
     def _pending_ids(self) -> list[str]:
         pending: list[str] = []
@@ -334,12 +371,15 @@ class Store:
             pending=len(pending_ids),
             confirmed=confirmed,
             dismissed=dismissed,
+            data_source=self.data_source,
         )
 
 
 def create_app(fixture_path: Path | None = None) -> FastAPI:
-    path = FIXTURE_PATH if fixture_path is None else fixture_path
-    store = Store.load(path)
+    if fixture_path is None:
+        store = Store.load_default()
+    else:
+        store = Store.load(fixture_path, data_source="fixture")
     app = FastAPI(title="Reckon review queue")
     app.add_middleware(
         CORSMiddleware,
@@ -350,7 +390,9 @@ def create_app(fixture_path: Path | None = None) -> FastAPI:
 
     @app.get("/queue")
     def get_queue() -> JSONResponse:
-        return json_response(QueueResponse(items=store.queue()))
+        return json_response(
+            QueueResponse(items=store.queue(), data_source=store.data_source)
+        )
 
     @app.get("/candidate/{candidate_id}")
     def get_candidate(candidate_id: str) -> JSONResponse:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import field_validator
 
 from core.models import (
@@ -13,6 +15,8 @@ from core.models import (
     Verdict,
     VerdictOutcome,
 )
+
+DataSource = Literal["pipeline", "fixture"]
 
 
 class FunnelSnapshot(SchemaModel):
@@ -47,6 +51,7 @@ class QueueItem(SchemaModel):
 
 class QueueResponse(SchemaModel):
     items: list[QueueItem]
+    data_source: DataSource
 
 
 class CandidateResponse(SchemaModel):
@@ -74,6 +79,7 @@ class StatsResponse(SchemaModel):
     pending: int
     confirmed: int
     dismissed: int
+    data_source: DataSource
 
 
 class DecideRequest(SchemaModel):

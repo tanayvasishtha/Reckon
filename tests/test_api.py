@@ -4,6 +4,7 @@ import json
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,19 @@ from api.main import (
 )
 from api.schemas import FixtureFile
 from core.models import Decision, VerdictOutcome
+
+# Labelled-run funnel from RESULTS.md: 1742 blocked, 1731 residual,
+# 871 escalate + 3 errored = 874 queued survivors.
+_PIPELINE_CANDIDATES = 1742
+_PIPELINE_AFTER_DISMISS = 1731
+_PIPELINE_AFTER_ADJUDICATE = 874
+
+
+@pytest.fixture(autouse=True)
+def _hide_generated_queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    missing = tmp_path / "absent" / "queue.json"
+    monkeypatch.setattr("api.main.GENERATED_QUEUE_PATH", missing)
+    return missing
 
 
 @pytest.fixture
@@ -157,6 +171,72 @@ def test_stats_returns_funnel_counts(client: TestClient) -> None:
     assert stats["dismissed"] == 0
     assert stats["dollars_at_risk"] == "117034.25"
     assert isinstance(stats["dollars_at_risk"], str)
+    assert stats["data_source"] == "fixture"
+
+
+def test_queue_reports_fixture_data_source(client: TestClient) -> None:
+    payload = client.get("/queue").json()
+    assert payload["data_source"] == "fixture"
+    assert len(payload["items"]) == 8
+
+
+def test_stats_uses_generated_pipeline_funnel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw: dict[str, Any] = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+    raw["funnel"] = {
+        "rows_in": 20000,
+        "transactions": 14208,
+        "candidates": _PIPELINE_CANDIDATES,
+        "after_dismiss": _PIPELINE_AFTER_DISMISS,
+        "after_adjudicate": _PIPELINE_AFTER_ADJUDICATE,
+    }
+    path = tmp_path / "queue.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    monkeypatch.setattr("api.main.GENERATED_QUEUE_PATH", path)
+    local = TestClient(create_app())
+    stats = local.get("/stats").json()
+    _assert_money_strings(stats)
+    assert stats["candidates"] == _PIPELINE_CANDIDATES
+    assert stats["after_dismiss"] == _PIPELINE_AFTER_DISMISS
+    assert stats["after_adjudicate"] == _PIPELINE_AFTER_ADJUDICATE
+    assert stats["data_source"] == "pipeline"
+    assert stats["pending"] == 8
+    queue = local.get("/queue").json()
+    assert queue["data_source"] == "pipeline"
+
+
+def test_unreadable_generated_queue_falls_back_to_fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "queue.json"
+    path.write_text("{not-json", encoding="utf-8")
+    monkeypatch.setattr("api.main.GENERATED_QUEUE_PATH", path)
+    local = TestClient(create_app())
+    stats = local.get("/stats").json()
+    assert stats["candidates"] == 486
+    assert stats["after_dismiss"] == 61
+    assert stats["after_adjudicate"] == 8
+    assert stats["data_source"] == "fixture"
+
+
+def test_startup_does_not_run_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    spies = [
+        Mock(name="aggregate"),
+        Mock(name="block"),
+        Mock(name="dismiss"),
+        Mock(name="adjudicate"),
+    ]
+    monkeypatch.setattr("core.aggregate.aggregate", spies[0])
+    monkeypatch.setattr("core.blocking.block", spies[1])
+    monkeypatch.setattr("core.dismiss.dismiss", spies[2])
+    monkeypatch.setattr("agents.adjudicate.adjudicate", spies[3])
+    local = TestClient(create_app())
+    stats = local.get("/stats").json()
+    assert stats["data_source"] == "fixture"
+    assert stats["candidates"] == 486
+    for spy in spies:
+        spy.assert_not_called()
 
 
 def test_decide_records_and_leaves_the_queue(client: TestClient) -> None:
