@@ -21,14 +21,14 @@ export function QueuePane({ items, selectedId, error, onSelect }: Props) {
     body = <Empty message="No candidates waiting for review." />;
   } else {
     body = (
-      <div role="radiogroup" aria-label="Candidates">
+      <div role="radiogroup" aria-label="Candidates" className="queue-list">
         {items.map((item) => {
           const selected = item.candidate_id === selectedId;
           return (
             <label
               key={item.candidate_id}
               className={[
-                "flex min-h-16 cursor-pointer flex-col border-b border-b-line px-5 py-3 last:border-b-0",
+                "queue-item flex min-h-16 cursor-pointer flex-col px-5 py-3",
                 "border-l-4",
                 selected ? "border-l-accent" : "border-l-transparent hover:border-l-line",
                 "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-2px] has-[:focus-visible]:outline-ink",
@@ -67,11 +67,8 @@ export function QueuePane({ items, selectedId, error, onSelect }: Props) {
   }
 
   return (
-    <section
-      aria-label="Queue"
-      className="flex min-h-0 w-[360px] shrink-0 flex-col overflow-hidden rounded-[8px] border border-line bg-card"
-    >
-      <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+    <section aria-label="Queue" className="queue-pane">
+      <div className="queue-scroller">{body}</div>
       <p className="shrink-0 border-t border-line px-5 py-2 text-[12px] leading-[1.5] text-mute">
         j / ↓ next · k / ↑ previous · c confirm · d dismiss · esc close
       </p>
@@ -81,7 +78,7 @@ export function QueuePane({ items, selectedId, error, onSelect }: Props) {
 
 function Empty({ message }: { message: string }) {
   return (
-    <p className="flex min-h-[12rem] items-center justify-center px-6 text-center text-[15px] leading-[1.5] text-mute">
+    <p className="queue-empty flex min-h-[12rem] items-center justify-center px-6 text-center text-[15px] leading-[1.5] text-mute">
       {message}
     </p>
   );

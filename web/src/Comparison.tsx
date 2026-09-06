@@ -40,31 +40,36 @@ type Props = {
 
 export function Comparison({ left, right }: Props) {
   return (
-    <div className="overflow-hidden rounded-[8px] border border-line">
-      <div className="grid grid-cols-[144px_1fr_1fr] border-b border-line bg-canvas">
-        <div />
-        <p className="truncate px-4 py-2 font-mono text-[12px] leading-[1.5] text-mute" title={left.transaction_id}>
-          {left.transaction_id}
-        </p>
-        <p className="truncate px-4 py-2 font-mono text-[12px] leading-[1.5] text-mute" title={right.transaction_id}>
-          {right.transaction_id}
-        </p>
-      </div>
-      {FIELDS.map((field) => {
-        const leftText = formatField(left, field);
-        const rightText = formatField(right, field);
-        const differs = leftText !== rightText;
-        return (
-          <div
-            key={field.key}
-            className="grid grid-cols-[144px_1fr_1fr] border-b border-line last:border-b-0"
+    <div className="comparison-scroll">
+      <div className="comparison-table">
+        <div className="comparison-row comparison-head">
+          <div />
+          <p
+            className="px-4 py-2 font-mono text-[12px] leading-[1.5] text-mute"
+            title={left.transaction_id}
           >
-            <p className="px-4 py-2 text-[13px] leading-[1.5] text-mute">{field.label}</p>
-            <ValueCell value={leftText} differs={differs} mono={MONO_KEYS.has(field.key)} />
-            <ValueCell value={rightText} differs={differs} mono={MONO_KEYS.has(field.key)} />
-          </div>
-        );
-      })}
+            {left.transaction_id}
+          </p>
+          <p
+            className="px-4 py-2 font-mono text-[12px] leading-[1.5] text-mute"
+            title={right.transaction_id}
+          >
+            {right.transaction_id}
+          </p>
+        </div>
+        {FIELDS.map((field) => {
+          const leftText = formatField(left, field);
+          const rightText = formatField(right, field);
+          const differs = leftText !== rightText;
+          return (
+            <div key={field.key} className="comparison-row">
+              <p className="px-4 py-2 text-[13px] leading-[1.5] text-mute">{field.label}</p>
+              <ValueCell value={leftText} differs={differs} mono={MONO_KEYS.has(field.key)} />
+              <ValueCell value={rightText} differs={differs} mono={MONO_KEYS.has(field.key)} />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -95,6 +100,8 @@ function ValueCell({
   const font = mono ? "font-mono tabular-nums" : "";
   const tone = differs ? "text-ink bg-diff" : "text-mute";
   return (
-    <p className={`px-4 py-2 text-[15px] leading-[1.5] ${font} ${tone}`}>{value}</p>
+    <p className={`min-w-0 px-4 py-2 text-[15px] leading-[1.5] break-words ${font} ${tone}`}>
+      {value}
+    </p>
   );
 }

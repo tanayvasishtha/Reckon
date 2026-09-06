@@ -168,14 +168,14 @@ export function App() {
       : "Select a candidate from the queue.";
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <h1 className="sr-only">Review queue</h1>
       <Header
         stats={stats}
         approver={selected?.approver ?? finding?.approver ?? null}
         department={selected?.department ?? finding?.department ?? null}
       />
-      <div className="flex min-h-0 flex-1 gap-4 p-4">
+      <div className="review-shell">
         <QueuePane
           items={queue}
           selectedId={selectedId}
