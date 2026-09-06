@@ -25,8 +25,11 @@ whole pipeline replays offline.
 ```
 git clone https://github.com/tanayvasishtha/Reckon
 cd Reckon
-make demo-fast
+uv run python -u -m scripts.run_demo --fast
 ```
+
+If you have `make`, `make demo-fast` does the same thing. The direct command is
+given first because `make` is often absent on Windows.
 
 That runs the full pipeline on twenty thousand real Los Angeles payment records
 and prints the funnel: rows in, payments after aggregation, candidates after
@@ -301,13 +304,13 @@ Writes `RESULTS.md` from the labelled eval set. Replay, no key.
 - Errored rate: Cost and runtime. Full pipeline `errored` over rules-only `escalate` (3 of 1,731).
 
 ```
-make demo
+uv run python -u -m scripts.run_demo
 ```
 
 Funnel on the committed sample. Same replay path.
 
 ```
-make test
+uv run pytest
 ```
 
 Includes the 200,000-row blocking budget and two-tier adjudication.
@@ -388,17 +391,20 @@ document that lives outside them.
 ```
 git clone https://github.com/tanayvasishtha/Reckon
 cd Reckon
-make demo
+uv run python -u -m scripts.run_demo
 ```
 
 No API key required. With none set the pipeline runs against recorded
 cassettes: full output, deterministic, offline.
 
 ```
-make demo-fast                              a smaller slice, under 30 seconds
-make demo SOURCE=oklahoma                   a different ledger, different schema
-make demo SOURCE=mine.csv MAP=mine.yaml     your own export
+uv run python -u -m scripts.run_demo --fast                   smaller slice, faster
+uv run python -u -m scripts.run_demo --source oklahoma        different ledger, different schema
+uv run python -u -m scripts.run_demo --source mine.csv --map mine.yaml    your own export
 ```
+
+With `make` available, the same three are `make demo-fast`, `make demo SOURCE=oklahoma`
+and `make demo SOURCE=mine.csv MAP=mine.yaml`.
 
 That last one is the point of the adapter layer. Each adapter declares what its
 source cannot provide, and blocking only runs the checks the data supports. The
