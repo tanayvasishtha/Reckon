@@ -120,44 +120,60 @@ anyone cloning this repository.
 
 ## Architecture
 
-Numbers on the edges are a real run over 20,000 Los Angeles payment records.
+Numbers are from a real run over 20,000 Los Angeles payment records.
 
-```mermaid
-flowchart TD
-    L[("Payment ledger<br/>20,000 rows")] --> AD["Source adapter<br/><i>declares what this source lacks</i>"]
-
-    AD -->|"20,000 rows"| S1["<b>1. Aggregate</b><br/>distribution lines onto payments"]
-    S1 -->|"3,425 payments"| S2["<b>2. Normalise</b><br/>vendor and invoice canonicalisation"]
-    S2 --> S3["<b>3. Block</b><br/>hash-bucketed candidate pairs"]
-    S3 -->|"1,279 candidates"| S4["<b>4. Dismiss</b><br/>what a rule can prove innocent"]
-    S4 -->|"1,268 survive"| S5["<b>5. Adjudicate</b><br/>weigh the cases that need judgement"]
-
-    S5 -->|"395 dismissed"| DEAD["Explained.<br/>Never reaches a person."]
-    S5 -->|"774 escalated"| S6["<b>6. Review</b><br/>named approver, evidence attached"]
-    S5 -->|"4 errored, 95 no recording"| FLAG["Surfaced, not dropped"]
-
-    S6 -->|"confirmed"| S7["<b>7. Package</b><br/>claim letter, journal entry, audit trail"]
-    S6 -->|"dismissed"| RULE["Reason becomes a rule.<br/>Never asked again."]
-    RULE -.->|"next run"| S4
-
-    classDef det fill:#eef2f7,stroke:#94a3b8,color:#1a1916
-    classDef model fill:#dbeafe,stroke:#215e9a,color:#1a1916,stroke-width:2px
-    classDef human fill:#fef3c7,stroke:#d97706,color:#1a1916,stroke-width:2px
-    classDef sink fill:#f3f1ec,stroke:#d8d3c9,color:#5c5852
-
-    class AD,S1,S2,S3,S4,S7 det
-    class S5 model
-    class S6 human
-    class DEAD,FLAG,RULE,L sink
+```
+              Payment ledger, any source
+                    20,000 rows
+                         |
+                 [ source adapter ]  declares what this source lacks
+                         |
+   ------------------------------------------------- deterministic
+   |                                                 plain Python
+   v
+ 1. Aggregate      distribution lines -> payments        20,000 -> 3,425
+   |
+   v
+ 2. Normalise      vendor + invoice canonicalisation
+   |
+   v
+ 3. Block          hash-bucketed candidate pairs         3,425  -> 1,279
+   |
+   v
+ 4. Dismiss        what a rule can prove innocent        1,279  -> 1,268
+   |
+   ------------------------------------------------- the model runs here,
+   |                                                 and only here
+   v
+ 5. Adjudicate     weigh the cases that need judgement
+   |
+   +---> 395 dismissed .......... explained, never reaches a person
+   |
+   +---> 4 errored, 95 unrecorded ... surfaced, never dropped
+   |
+   +---> 774 escalated
+             |
+             v
+   ------------------------------------------------- a person decides
+             |
+ 6. Review    named approver, evidence attached
+             |
+   +---> dismissed --> reason becomes a rule --> feeds stage 4 next run
+   |
+   +---> confirmed
+             |
+             v
+ 7. Package   claim letter, journal entry, audit trail
 ```
 
-Grey stages are plain Python and carry all the volume. The blue stage is the
-only one that calls a model, and it sees 1,268 of the original 20,000 rows.
-The amber stage is a person.
+Two things this is meant to make obvious.
 
-Two things the diagram is meant to make obvious. The funnel narrows before the
-expensive stage, not after it. And the agent's most common output is
-**dismissed**, not escalated: its job is to remove work, not create it.
+The funnel narrows *before* the expensive stage. Twenty thousand rows go in and
+the model sees 1,268 of them. Stages 1 to 4 and 7 are plain Python and carry all
+the volume.
+
+The agent's largest output is **dismissed**, not escalated. Its job is to remove
+work, not to create it.
 
 ## Results
 
