@@ -257,3 +257,41 @@ def test_candidate_requires_two_transaction_ids() -> None:
             amount_at_risk=Decimal("1.00"),
             stage_generated="blocking",
         )
+
+
+def test_evidence_values_flat_list_of_strings_passes_through() -> None:
+    evidence = Evidence.model_validate(
+        {"field": "amounts", "values": ["2.16", "4.32", "72"]}
+    )
+    assert evidence.values == ["2.16", "4.32", "72"]
+
+
+def test_evidence_values_single_nested_list_is_flattened() -> None:
+    evidence = Evidence.model_validate(
+        {"field": "amounts", "values": [["2.16", "4.32", "72"]]}
+    )
+    assert evidence.values == ["2.16", "4.32", "72"]
+
+
+def test_evidence_values_mixed_list_is_flattened_one_level() -> None:
+    evidence = Evidence.model_validate(
+        {"field": "amounts", "values": ["2.16", ["4.32", "72"], "9.00"]}
+    )
+    assert evidence.values == ["2.16", "4.32", "72", "9.00"]
+
+
+def test_evidence_values_numeric_and_bool_leaves_become_strings() -> None:
+    evidence = Evidence.model_validate(
+        {"field": "amounts", "values": [[2.5, 72, True, False]]}
+    )
+    assert evidence.values == ["2.5", "72", "True", "False"]
+
+
+def test_evidence_values_none_becomes_empty_list() -> None:
+    evidence = Evidence.model_validate({"field": "amounts", "values": None})
+    assert evidence.values == []
+
+
+def test_evidence_values_dict_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="evidence values must not be a dict"):
+        Evidence.model_validate({"field": "amounts", "values": {"2.16": "4.32"}})

@@ -3,7 +3,13 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, PlainSerializer
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    PlainSerializer,
+    field_validator,
+)
 from pydantic_core import PydanticCustomError
 
 
@@ -74,9 +80,45 @@ class Decision(StrEnum):
     dismissed = "dismissed"
 
 
+def _evidence_leaf_to_str(value: object) -> str:
+    if isinstance(value, dict):
+        raise PydanticCustomError(
+            "evidence_values_dict",
+            "evidence values must not be a dict",
+        )
+    return str(value)
+
+
+def _flatten_evidence_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        raise PydanticCustomError(
+            "evidence_values_dict",
+            "evidence values must not be a dict",
+        )
+    if not isinstance(value, list):
+        raise PydanticCustomError(
+            "evidence_values_type",
+            "evidence values must be a list",
+        )
+    flattened: list[str] = []
+    for item in value:
+        if isinstance(item, list):
+            flattened.extend(_evidence_leaf_to_str(leaf) for leaf in item)
+        else:
+            flattened.append(_evidence_leaf_to_str(item))
+    return flattened
+
+
 class Evidence(SchemaModel):
     field: str
     values: list[str]
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def flatten_values(cls, value: object) -> list[str]:
+        return _flatten_evidence_values(value)
 
 
 class Transaction(SchemaModel):
