@@ -7,7 +7,9 @@ Verdict. The job is to kill candidates: most of what arrives here is
 innocent, and a false positive is worse than a miss. Anything the model
 cannot explain is escalated to a human. A response that fails schema
 validation becomes verdict=errored and still reaches the queue; it is
-never replaced with a guess.
+never replaced with a guess. A missing replay recording is also written
+as verdict=errored so the row is never dropped, but it is a setup miss
+counted in unmatched_recordings rather than a genuine error.
 
 Every candidate is sent to the fast model first. A second call to the
 escalate model happens only when fast-model confidence is below
@@ -32,8 +34,10 @@ import logging
 import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
+from agents.cassettes import CassetteError
 from agents.llm import ModelClient, ModelError, ModelResult
 from agents.prompts import build_messages
 from core.models import (
@@ -49,9 +53,64 @@ from core.settings import Settings, load_settings
 
 log = logging.getLogger("agents.adjudicate")
 
+_UNMATCHED_RECORDING_PREFIX = "no recording:"
+
 
 class AdjudicationError(Exception):
     """Stage 5 failed before any candidate could be judged."""
+
+
+@dataclass(frozen=True, slots=True)
+class AdjudicationSummary:
+    """Four-way counts for one Stage 5 result list.
+
+    errored is genuine failures only. unmatched_recordings are missing
+    replay recordings, still written as verdict=errored so no row drops.
+    """
+
+    rows_in: int
+    dismissed: int
+    escalated: int
+    errored: int
+    unmatched_recordings: int
+    passed_through: bool
+
+
+def is_unmatched_recording(verdict: Verdict) -> bool:
+    """Return True when reasoning marks a missing replay recording."""
+    return verdict.reasoning.startswith(_UNMATCHED_RECORDING_PREFIX)
+
+
+def summarise_adjudication(verdicts: Sequence[Verdict]) -> AdjudicationSummary:
+    """Return counts that sum to len(verdicts).
+
+    rows_in equals the verdict list length. unmatched_recordings are
+    verdict=errored rows whose reasoning starts with "no recording:".
+    errored excludes those unmatched rows. passed_through is True only
+    when dismissed, genuine errored, and unmatched_recordings are all 0.
+    """
+    dismissed = 0
+    escalated = 0
+    genuine_errored = 0
+    unmatched = 0
+    for item in verdicts:
+        if is_unmatched_recording(item):
+            unmatched += 1
+            continue
+        if item.verdict is VerdictOutcome.dismiss:
+            dismissed += 1
+        elif item.verdict is VerdictOutcome.escalate:
+            escalated += 1
+        elif item.verdict is VerdictOutcome.errored:
+            genuine_errored += 1
+    return AdjudicationSummary(
+        rows_in=len(verdicts),
+        dismissed=dismissed,
+        escalated=escalated,
+        errored=genuine_errored,
+        unmatched_recordings=unmatched,
+        passed_through=(dismissed == 0 and genuine_errored == 0 and unmatched == 0),
+    )
 
 
 class ModelJudgement(SchemaModel):
@@ -159,6 +218,32 @@ def _add_tokens(verdict: Verdict, result: ModelResult[ModelJudgement]) -> Verdic
     )
 
 
+def _cause_chain_has_cassette_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc.__cause__
+    seen: set[int] = {id(exc)}
+    while current is not None and id(current) not in seen:
+        if isinstance(current, CassetteError):
+            return True
+        seen.add(id(current))
+        current = current.__cause__
+    return False
+
+
+def _is_unmatched_client_error(exc: BaseException) -> bool:
+    if type(exc).__name__ == "ReplayMissError":
+        return True
+    if _cause_chain_has_cassette_error(exc):
+        return True
+    return "no cassette" in str(exc)
+
+
+def _client_error_reasoning(exc: ModelError) -> str:
+    text = str(exc)
+    if not _is_unmatched_client_error(exc):
+        return text
+    return f"{_UNMATCHED_RECORDING_PREFIX}{text}"
+
+
 async def _complete(
     client: ModelClient,
     messages: Sequence[Mapping[str, str]],
@@ -170,7 +255,7 @@ async def _complete(
     except ModelError as exc:
         return _errored_verdict(
             candidate,
-            reasoning=str(exc),
+            reasoning=_client_error_reasoning(exc),
             model_used=model,
         )
 
@@ -259,8 +344,34 @@ async def _adjudicate_one(
     )
 
 
-def _count(verdicts: Sequence[Verdict], outcome: VerdictOutcome) -> int:
-    return sum(1 for item in verdicts if item.verdict is outcome)
+def _model_escalations(verdicts: Sequence[Verdict], settings: Settings) -> int:
+    escalate_model = settings.model_escalate
+    if escalate_model is None or escalate_model == settings.model_fast:
+        return 0
+    return sum(1 for item in verdicts if item.model_used == escalate_model)
+
+
+def _log_adjudicate_done(
+    summary: AdjudicationSummary,
+    *,
+    model_escalations: int,
+    elapsed_ms: int,
+    run_id: str,
+) -> None:
+    log.info(
+        "adjudicate done rows_in=%s dismissed=%s escalated=%s "
+        "errored=%s unmatched_recordings=%s passed_through=%s "
+        "model_escalations=%s elapsed_ms=%s run_id=%s",
+        summary.rows_in,
+        summary.dismissed,
+        summary.escalated,
+        summary.errored,
+        summary.unmatched_recordings,
+        summary.passed_through,
+        model_escalations,
+        elapsed_ms,
+        run_id,
+    )
 
 
 async def adjudicate(
@@ -280,6 +391,8 @@ async def adjudicate(
     escalate model happens only when fast-model confidence is below
     Settings.escalation_confidence_threshold. Schema failures and client
     errors become verdict=errored rather than a guessed judgement.
+    Missing replay recordings stay in the list as verdict=errored with
+    reasoning prefixed "no recording:".
     """
     resolved = settings if settings is not None else load_settings()
     if resolved.concurrency_limit < 1:
@@ -298,10 +411,11 @@ async def adjudicate(
         resolved.model_escalate or "-",
     )
     if not candidate_list:
-        log.info(
-            "adjudicate done rows_in=0 rows_out=0 elapsed_ms=%s run_id=%s",
-            int((time.perf_counter() - started) * 1000),
-            active_run_id,
+        _log_adjudicate_done(
+            summarise_adjudication([]),
+            model_escalations=0,
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+            run_id=active_run_id,
         )
         return []
 
@@ -335,23 +449,11 @@ async def adjudicate(
             await active_client.aclose()
 
     verdicts = sorted(gathered, key=lambda item: item.candidate_id)
-    elapsed_ms = int((time.perf_counter() - started) * 1000)
-    escalate_model = resolved.model_escalate
-    model_escalations = 0
-    if escalate_model is not None and escalate_model != resolved.model_fast:
-        model_escalations = sum(
-            1 for item in verdicts if item.model_used == escalate_model
-        )
-    log.info(
-        "adjudicate done rows_in=%s rows_out=%s dismissed=%s escalated=%s "
-        "errored=%s model_escalations=%s elapsed_ms=%s run_id=%s",
-        len(candidate_list),
-        len(verdicts),
-        _count(verdicts, VerdictOutcome.dismiss),
-        _count(verdicts, VerdictOutcome.escalate),
-        _count(verdicts, VerdictOutcome.errored),
-        model_escalations,
-        elapsed_ms,
-        active_run_id,
+    summary = summarise_adjudication(verdicts)
+    _log_adjudicate_done(
+        summary,
+        model_escalations=_model_escalations(verdicts, resolved),
+        elapsed_ms=int((time.perf_counter() - started) * 1000),
+        run_id=active_run_id,
     )
     return verdicts
