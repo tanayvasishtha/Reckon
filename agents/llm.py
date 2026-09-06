@@ -5,6 +5,8 @@ Stage 5 talks to any chat-completions endpoint configured through Settings
 With RECKON_API_KEY set, calls go live and every request/response is recorded
 as a cassette. With no key, responses are read from fixtures/cassettes/ and
 no network is used. That replay path is the default for a clone with no key.
+A missing, mismatched, or unreadable recording raises ReplayMissError, a
+setup problem distinct from a model failure.
 
 Complexity: O(1) work per call besides waiting on the endpoint. At most
 Settings.concurrency_limit calls are in flight (default 16). Retries sleep
@@ -55,6 +57,10 @@ T = TypeVar("T", bound=BaseModel)
 
 class ModelError(Exception):
     """A chat-completions call failed."""
+
+
+class ReplayMissError(ModelError):
+    """Replay mode found no matching recording; this is a setup problem, not a model failure."""
 
 
 class SchemaValidationError(ModelError):
@@ -191,6 +197,7 @@ class ModelClient:
 
         A response that fails schema validation raises SchemaValidationError.
         Missing fields are not filled in and invalid JSON is never coerced.
+        Replay with no matching recording raises ReplayMissError.
         """
         resolved_model = _resolve_model(self._settings, model)
         payload = build_request(model=resolved_model, messages=messages)
@@ -209,7 +216,7 @@ class ModelClient:
         try:
             return load_cassette(self._cassette_dir, payload)
         except CassetteError as exc:
-            raise ModelError(str(exc)) from exc
+            raise ReplayMissError(str(exc)) from exc
 
     async def _live(self, payload: Mapping[str, object]) -> dict[str, object]:
         last_error: TransientModelError | None = None
