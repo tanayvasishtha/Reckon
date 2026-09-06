@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"483.86\",\"candidate_id\":\"invoice_variant:AD26240000116013:AD26240000120074\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000116013\",\"AD26240000120074\"]},\"related\":[],\"transactions\":[{\"amount\":\"483.86\",\"department\":\"FIRE\",\"description\":\"PRIVACY-FIRE\",\"distinct_line_amounts\":[\"483.86\"],\"invoice_amount\":\"483.86\",\"invoice_canonical\":\"3824100383584\",\"invoice_date\":\"2024-05-28\",\"invoice_number_raw\":\"3824100383584\",\"line_count\":1,\"payment_date\":\"2024-06-06\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000116013\",\"vendor_canonical\":\"PRIVACYFIRE\",\"vendor_id\":\"PRIVACY-FIRE\",\"vendor_name_raw\":\"PRIVACY-FIRE\"},{\"amount\":\"483.86\",\"department\":\"FIRE\",\"description\":\"PRIVACY-FIRE\",\"distinct_line_amounts\":[\"483.86\"],\"invoice_amount\":\"483.86\",\"invoice_canonical\":\"3824100383666\",\"invoice_date\":\"2024-06-05\",\"invoice_number_raw\":\"3824100383666\",\"line_count\":1,\"payment_date\":\"2024-06-17\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":null,\"transaction_id\":\"AD26240000120074\",\"vendor_canonical\":\"PRIVACYFIRE\",\"vendor_id\":\"PRIVACY-FIRE\",\"vendor_name_raw\":\"PRIVACY-FIRE\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"invoice_variant:AD26240000116013:AD26240000120074\",\"verdict\":\"escalate\",\"explanation_type\":\"none\",\"reasoning\":\"Two separate PAID payments of identical amount to same vendor with different invoice numbers and dates. Lacks clear indicators of progress payment or different PO. Not a simple line split due to distinct invoice amounts. Need human judgment on vendor relationship.\",\"evidence\":[{\"field\":\"amount\",\"values\":[\"483.86\",\"483.86\"]},{\"field\":\"vendor_id\",\"values\":[\"PRIVACY-FIRE\",\"PRIVACY-FIRE\"]},{\"field\":\"invoice_number_raw\",\"values\":[\"3824100383584\",\"3824100383666\"]},{\"field\":\"payment_status\",\"values\":[\"PAID\",\"PAID\"]},{\"field\":\"payment_date\",\"values\":[\"2024-06-06\",\"2024-06-17\"]},{\"field\":\"po_number\",\"values\":[null,null]}],\"confidence\":0.4}",
+          "function_call": null,
+          "reasoning": "Let me analyze this candidate pair.\n\nCandidate details:\n- Amount at risk: $483.86\n- Signal: invoice_variant\n- Two transactions with same amount, same department, similar descriptions\n\nTransaction 1:\n- Amount: $483.86\n- Description: PRIVACY-FIRE\n- Invoice number: 3824100383584\n- Invoice date: 2024-05-28\n- Payment date: 2024-06-06\n- Status: PAID\n\nTransaction 2:\n- Amount: $483.86\n- Description: PRIVACY-FIRE\n- Invoice number: 3824100383666\n- Invoice date: 2024-06-05\n- Payment date: 2024-06-17\n- Status: PAID\n\nAnalysis:\n1. Same vendor (PRIVACY-FIRE)\n2. Same amount ($483.86)\n3. Same department (FIRE)\n4. Both are PAID\n5. Similar descriptions\n6. Different invoice numbers\n7. Different invoice dates (within 1 week of each other)\n8. Different payment dates (within 2 weeks of each other)\n\nWhat are the possibilities?\n\nPossible explanations:\n1. **different_po**: Different PO numbers or just different orders for the same vendor. But both PO numbers are null, so this is less likely since different PO numbers are a common indicator.\n\n2. **progress_payment**: These could be progress payments. The description \"PRIVACY-FIRE\" doesn't explicitly mention progress, but the similar amounts and close dates could indicate staged payments. Let me check the invoices: \"PRIVACY-FIRE\" could refer to a multi-phase project.\n\n3. **partial_pair**: This would be if these are partial payments for the same invoice. But the invoice amounts are different ($483.86 each), so they can't be partial payments of the same invoice. The arithmetic check fails: 483.86 + 483.86 = 967.72, which exceeds a single invoice amount. Also, if they were partial payments, the descriptions would usually indicate \"partial payment\" or \"balance remaining\".\n\n\n4. **line_split**: Different invoice numbers and dates strongly suggest separate invoices, not a line split of a single invoice. This doesn't fit the pattern.\n\nThe common thread appears to be separate invoices with identical amounts and payment statuses for the same vendor. Without additional context about the nature of the vendor relationship, I cannot definitively determine if this is a legitimate variation or a genuine duplicate. The lack of PO numbers, progress payment indicators, or clear transaction relationships makes it challenging to definitively categorize.\n\nThe vendor name's truncated status (PRIVACYFIRE) and the absence of transaction details like reference numbers further complicate the analysis. Given the absence of clear distinguishing factors, escalating this to a human reviewer seems most appropriate to ensure accurate processing.\n\nI'll need to carefully consider whether these payments might represent legitimate variations or potential duplicates requiring further investigation.\n\nThe close proximity of payment dates, identical amounts, and matching vendor characteristics suggest a nuanced scenario that demands human judgment beyond automated filtering criteria.\n\nThe absence of purchase order numbers and inconsistent transaction descriptions signal the need for detailed contextual verification. Without explicit progression or partial payment indicators, these transactions likely represent separate, legitimate invoice processing efforts by the same vendor.\n\nThe lack of PO numbers and transaction details makes determining the precise relationship challenging, necessitating careful human review to confirm their authenticity and prevent potential erroneous duplicate elimination.\n\nThe crucial consideration is preserving the candidate pair for further investigation, avoiding premature dismissal without sufficient evidence of a direct transactional link between these payments.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788703417,
+    "id": "chatcmpl-ad4c7648-1941-4eea-b68b-c44cc932d81d",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 960,
+      "prompt_tokens": 1043,
+      "prompt_tokens_details": null,
+      "total_tokens": 2003
+    }
+  }
+}

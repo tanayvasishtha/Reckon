@@ -170,6 +170,26 @@ still gets wrong are the two hardest categories: recurring billing at a
 constant amount, and two genuinely different purchase orders that happen to
 match.
 
+### When these numbers were measured
+
+The table above was produced before the arithmetic fix described below was
+merged. It reflects the adjudication prompt as of commit `83d8109`.
+
+After measuring the misses we found a specific, nameable failure: the agent
+could not reliably separate legitimate parts of one invoice from an invoice
+paid in full and then paid again in part. The distinguishing test is
+arithmetic, since real parts sum to the invoice amount and duplicates exceed
+it. Adding that instruction to the prompt was measured on the 50 hardest
+candidates and raised escalations from 19 to 40.
+
+That fix is merged and shipping. Re-running the full evaluation against it
+means re-recording 1,731 live calls, which takes longer than the time left in
+the hackathon, so the headline table is not restated here. Reporting improved
+numbers we had not actually measured would be worse than reporting the older
+ones honestly.
+
+Reproduce the current table with `uv run python -m evaluation.harness`.
+
 ### The trade we are making
 
 Recall dropped from 1.000 to 0.700. Reckon misses three real duplicates in ten.

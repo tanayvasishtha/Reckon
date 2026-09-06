@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"7391.27\",\"candidate_id\":\"invoice_variant:AD26240000120829:AD26240000121482\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000120829\",\"AD26240000121482\"]},\"related\":[],\"transactions\":[{\"amount\":\"7391.27\",\"department\":\"GENERAL SERVICES\",\"description\":null,\"distinct_line_amounts\":[\"1368.75\",\"1505.63\"],\"invoice_amount\":null,\"invoice_canonical\":\"40240000072119\",\"invoice_date\":\"2024-06-05\",\"invoice_number_raw\":\"40240000072119\",\"line_count\":5,\"payment_date\":\"2024-06-18\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000491411\",\"transaction_id\":\"AD26240000120829\",\"vendor_canonical\":\"MOBILEMODULARMGT\",\"vendor_id\":\"000002253\",\"vendor_name_raw\":\"MOBILE MODULAR MGT CORP\"},{\"amount\":\"7391.27\",\"department\":\"GENERAL SERVICES\",\"description\":null,\"distinct_line_amounts\":[\"1368.75\",\"1505.63\"],\"invoice_amount\":null,\"invoice_canonical\":\"40240000072879\",\"invoice_date\":\"2024-06-17\",\"invoice_number_raw\":\"40240000072879\",\"line_count\":5,\"payment_date\":\"2024-06-20\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000496001\",\"transaction_id\":\"AD26240000121482\",\"vendor_canonical\":\"MOBILEMODULARMGT\",\"vendor_id\":\"000002253\",\"vendor_name_raw\":\"MOBILE MODULAR MGT CORP\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"invoice_variant:AD26240000120829:AD26240000121482\",\n  \"verdict\": \"dismiss\",\n  \"explanation_type\": \"different_po\",\n  \"reasoning\": \"Both payments are for different Purchase Orders (CPO40240000491411 and CPO40240000496001) and have different canonical invoice IDs.\",\n  \"evidence\": [\n    {\n      \"field\": \"po_number\",\n      \"values\": [\n        \"CPO40240000491411\",\n        \"CPO40240000496001\"\n      ]\n    },\n    {\n      \"field\": \"invoice_canonical\",\n      \"values\": [\n        \"40240000072119\",\n        \"40240000072879\"\n      ]\n    }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Stage 5 Adjudicator.\n    *   **Goal:** Kill candidates (dismiss) or escalate. Never guess.\n    *   **Guidelines:** False positive is bad. If explanation exists -> dismiss. If not -> escalate.\n    *   **Output:** Single JSON object.\n\n2.  **Analyze the Data:**\n    *   **Candidate ID:** `invoice_variant:AD26240000120829:AD26240000121482`\n    *   **Signal:** `invoice_variant`\n    *   **Transactions:**\n        *   **Trans 1 (AD26240000120829):**\n            *   Amount: 7391.27\n            *   Invoice Canon: 40240000072119\n            *   Date: 2024-06-05\n            *   Lines: 5 lines (Amounts: 1368.75, 1505.63)\n            *   PO: CPO40240000491411\n        *   **Trans 2 (AD26240000121482):**\n            *   Amount: 7391.27\n            *   Invoice Canon: 40240000072879\n            *   Date: 2024-06-17\n            *   Lines: 5 lines (Amounts: 1368.75, 1505.63)\n            *   PO: CPO40240000496001\n    *   **Related:** None.\n\n3.  **Evaluate Explanations:**\n    *   **Same Vendor:** Yes (MOBILE MODULAR MGT CORP).\n    *   **Amounts:** Both 7391.27. Exact match.\n    *   **Dates:** Trans 1 (Jun 5), Trans 2 (Jun 17). Roughly 12 days apart.\n    *   **Invoice Numbers (Canon):** 40240000072119 vs 40240000072879. Different.\n    *   **PO Numbers:** CPO40240000491411 vs CPO40240000496001. Different.\n    *   **Line Amounts:** Distinct lists are identical: [\"1368.75\",\"1505.63\"].\n    *   **Total Lines:** 5 lines each.\n\n    *   **Hypothesis 1: Different PO (CPO...)**. The PO numbers are different. This fits the \"different_po\" explanation perfectly.\n    *   **Hypothesis 2: Progress Payment.** The dates are close (12 days). The amounts are identical. Progress payments usually follow a schedule (e.g., 25%, 50%, 75%). However, without a contract description or known schedule, assuming \"Progress Payment\" might be risky if the amounts are identical. But \"Different PO\" is a stronger, more explicit signal here because the PO numbers are distinctly different, and the invoice numbers are distinct. The signal here is \"invoice_variant\", often flagged when POs are different.\n    *   **Hypothesis 3: Line Split.** The lines are identical. The amounts are identical. If they were a line split, we'd expect the *sum* of the individual line amounts to equal the invoice amount. The distinct line amounts are `1368.75` and `1505.63`. Let's check the arithmetic.\n        *   1368.75 + 1505.63 = 2874.38.\n        *   Candidate Amount: 7391.27.\n        *   Is 7391.27 equal to 2874.38? No.\n        *   Is 7391.27 equal to 2 * 2874.38 = 5748.76? No.\n        *   This confirms they are not just line items from one invoice split into a payment and a return or partial payment. They are likely separate invoices.\n    *   **Hypothesis 4: Recurring.** Possible? Same vendor, same amount. But we don't have context like \"Month 1\", \"Month 2\". And the dates are 12 days apart, not month-to-month.\n\n4.  **Select Best Explanation:**\n    *   \"different_po\" is the most descriptive and supported explanation. Both transactions have valid, distinct PO numbers. The signal is `invoice_variant`, which often triggers on distinct POs.\n\n5.  **Formulate JSON:**\n    *   **candidate_id:** invoice_variant:AD26240000120829:AD26240000121482\n    *   **verdict:** dismiss\n    *   **explanation_type:** different_po\n    *   **reasoning:** Transactions paid against different POs (CPO40240000491411 vs CPO40240000496001) with different invoice canonical IDs.\n    *   **evidence:**\n        *   field: po_number, values: [\"CPO40240000491411\", \"CPO40240000496001\"]\n        *   field: invoice_canonical, values: [\"40240000072119\", \"40240000072879\"]\n    *   **confidence:** 1.0 (Strong evidence: different PO numbers).\n\n6.  **Final Check:**\n    *   Am I killing the candidate? Yes.\n    *   Did I assign a valid explanation? Yes.\n    *   Is the JSON valid? Yes.\n    *   Is the confidence honest? Yes.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788707702,
+    "id": "chatcmpl-2df4d2fa-60a2-4e25-b474-6436bb5c0c6d",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1370,
+      "prompt_tokens": 1058,
+      "prompt_tokens_details": null,
+      "total_tokens": 2428
+    }
+  }
+}
