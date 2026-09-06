@@ -191,25 +191,27 @@ still gets wrong are the two hardest categories: recurring billing at a
 constant amount, and two genuinely different purchase orders that happen to
 match.
 
-### When these numbers were measured
+### A measured improvement we did not ship
 
-The table above was produced before the arithmetic fix described below was
-merged. It reflects the adjudication prompt as of commit `83d8109`.
+Diagnosing the misses produced a specific, nameable failure. The agent could
+not reliably separate legitimate parts of one invoice from an invoice paid in
+full and then paid again in part. The distinguishing test is arithmetic: real
+parts sum to the invoice amount, duplicates exceed it. Adding that instruction
+to the prompt and measuring it on the 50 hardest candidates raised escalations
+from 19 to 40.
 
-After measuring the misses we found a specific, nameable failure: the agent
-could not reliably separate legitimate parts of one invoice from an invoice
-paid in full and then paid again in part. The distinguishing test is
-arithmetic, since real parts sum to the invoice amount and duplicates exceed
-it. Adding that instruction to the prompt was measured on the 50 hardest
-candidates and raised escalations from 19 to 40.
+It is not in the shipped prompt, and that is a deliberate call rather than an
+oversight. Changing the prompt changes the request, which changes the key every
+recorded response is stored under, so adopting it invalidates all 1,731
+recordings. Re-recording them takes longer than the time that remained. The
+options were a better prompt with numbers we could not reproduce and a demo
+that no longer runs offline, or the measured prompt with numbers anyone can
+check. We took the second.
 
-That fix is merged and shipping. Re-running the full evaluation against it
-means re-recording 1,731 live calls, which takes longer than the time left in
-the hackathon, so the headline table is not restated here. Reporting improved
-numbers we had not actually measured would be worse than reporting the older
-ones honestly.
-
-Reproduce the current table with `uv run python -m evaluation.harness`.
+The change is a single paragraph. It is in the git history at
+`ao/reckon-26/adjudication-arithmetic`, and re-running
+`uv run python -m evaluation.harness` after a fresh recording would measure it
+properly.
 
 ### The trade we are making
 
