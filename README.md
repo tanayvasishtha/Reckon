@@ -359,11 +359,14 @@ work, wrote the briefs, reviewed each diff, ran the checks and merged.
 
 | | |
 |---|---|
-| AO sessions | 31 |
-| Merged units | 20 |
-| Commits | 52 |
+| AO sessions | 35 |
+| Merged units | 26 |
+| Commits | 73 |
 | Python modules | 32 |
-| Tests | 330 |
+| Tests | 347 |
+
+Snapshot at `5a6396e`. Reproduce with `git log --oneline --merges | wc -l` and
+`uv run pytest`.
 
 Work was decomposed by file boundary rather than by feature, so parallel
 workers never collided in a worktree merge. The schema in `core/models.py`
