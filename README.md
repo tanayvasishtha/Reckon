@@ -17,6 +17,38 @@ Runs on real published payment ledgers. Every number below was produced by a
 script in this repository, and every claim about the problem traces to a
 primary source listed in `docs/EVIDENCE.md`.
 
+## Why I built this
+
+I went looking for what is actually sold to fix duplicate payments, and every
+vendor site leads with the same sentence: we test 100% of your transactions.
+All of them are telling the truth. That problem was solved a decade ago.
+
+What none of them publish anywhere is a false positive rate.
+
+So I went to the research instead. Published precision for continuous auditing
+exception detection is 0.73 at recall 0.18, and the authors say plainly that
+most of what it surfaces at that precision is noise. Then I found the study
+that decided this project. 125 auditors, controlled design: the ones using
+full-population testing acted on a fraud red flag 48% of the time, and the ones
+using sampling acted on it 65% of the time.
+
+Testing everything made them less skeptical. The tool built to catch more
+caused people to chase less.
+
+That is the whole thing in one number. Detection is not the bottleneck. A queue
+of 1,268 alerts landing on a team of four is the bottleneck, and the money stays
+lost because nobody can work through it.
+
+So I inverted the instruction. The model here is never asked to find a
+duplicate. It is asked to find the reason this one is innocent, and it only
+escalates when it cannot find one. Precision is the product. Recall is a slider
+anyone can push to 1.000 by flagging everything, which is exactly the tool
+nobody uses.
+
+That choice costs something real, and it is measured below rather than buried:
+recall falls from 1.000 to 0.700. It misses three real duplicates in ten. I
+would rather you saw that from me than found it yourself.
+
 ## Quickstart
 
 **No API key required.** Every model call is recorded and committed, so the
