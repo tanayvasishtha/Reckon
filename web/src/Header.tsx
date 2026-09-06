@@ -11,11 +11,11 @@ export function Header({ stats, approver, department }: Props) {
   const funnel = stats === null ? null : funnelLine(stats);
 
   return (
-    <header aria-label="Summary" className="shrink-0 border-b border-line px-6 py-4">
-      <div className="flex items-start justify-between gap-8">
+    <header aria-label="Summary" className="header-bar">
+      <div className="header-top">
         <p className="text-[13px] leading-[1.5] text-mute">Reckon</p>
         {funnel !== null ? (
-          <p className="text-right font-mono text-[12px] leading-[1.5] text-mute tabular-nums">
+          <p className="header-funnel text-right font-mono text-[12px] leading-[1.5] text-mute tabular-nums">
             {funnel}
           </p>
         ) : null}

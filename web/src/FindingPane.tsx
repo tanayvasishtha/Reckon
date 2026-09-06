@@ -34,8 +34,8 @@ export function FindingPane({
     );
   } else {
     body = (
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-y-auto p-6 min-[1100px]:grid-cols-2 min-[1100px]:grid-rows-[minmax(0,1fr)] min-[1100px]:overflow-hidden">
-        <div className="flex min-h-0 flex-col gap-4 min-[1100px]:overflow-y-auto">
+      <div className="finding-split">
+        <div className="finding-col">
           <section>
             <h2 className="text-[13px] leading-[1.5] text-mute">At risk</h2>
             <p className="mt-2 font-mono text-[32px] leading-none tracking-tight tabular-nums">
@@ -50,7 +50,9 @@ export function FindingPane({
 
           <section>
             <h2 className="text-[13px] leading-[1.5] text-mute">Reasoning</h2>
-            <p className="mt-2 max-w-[65ch] text-[15px] leading-[1.5]">{finding.reasoning}</p>
+            <p className="mt-2 min-w-0 max-w-[65ch] text-[15px] leading-[1.5]">
+              {finding.reasoning}
+            </p>
           </section>
 
           <section>
@@ -62,7 +64,7 @@ export function FindingPane({
                 {finding.evidence.map((item) => (
                   <div key={item.field}>
                     <dt className="text-[13px] leading-[1.5] text-mute">{item.field}</dt>
-                    <dd className="font-mono text-[15px] leading-[1.5] tabular-nums">
+                    <dd className="min-w-0 break-words font-mono text-[15px] leading-[1.5] tabular-nums">
                       {item.values.join("  ·  ")}
                     </dd>
                   </div>
@@ -89,26 +91,25 @@ export function FindingPane({
           </section>
         </div>
 
-        <div className="min-h-0 min-[1100px]:overflow-y-auto">
-          <h2 className="mb-2 text-[13px] leading-[1.5] text-mute">Transactions</h2>
-          <Comparison left={finding.left} right={finding.right} />
+        <div className="finding-col">
+          <section>
+            <h2 className="mb-2 text-[13px] leading-[1.5] text-mute">Transactions</h2>
+            <Comparison left={finding.left} right={finding.right} />
+          </section>
         </div>
       </div>
     );
   }
 
   return (
-    <section
-      aria-label="Finding"
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[8px] border border-line bg-card"
-    >
+    <section aria-label="Finding" className="finding-pane">
       {finding === null ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{body}</div>
       ) : (
         body
       )}
       {finding !== null ? (
-        <div className="shrink-0 border-t border-line px-6 py-4">
+        <div className="finding-actions">
           <DecisionForm
             key={finding.candidate_id}
             formRef={formRef}
