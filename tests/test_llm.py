@@ -15,6 +15,7 @@ from agents.llm import (
     REPLAY_MODE,
     ModelClient,
     ModelError,
+    ReplayMissError,
     SchemaValidationError,
     build_request,
     run_header,
@@ -200,8 +201,11 @@ async def test_schema_validation_rejects_malformed_response(
         cassette_dir=tmp_path,
         transport=httpx.MockTransport(handler),
     ) as client:
-        with pytest.raises(SchemaValidationError, match="errored; do not guess"):
+        with pytest.raises(
+            SchemaValidationError, match="errored; do not guess"
+        ) as raised:
             await client.complete(MESSAGES, Answer)
+    assert not isinstance(raised.value, ReplayMissError)
 
 
 async def test_retry_and_backoff_on_429(
@@ -378,8 +382,69 @@ async def test_backoff_does_not_collapse_the_pool(
 
 async def test_missing_cassette_fails_clearly(tmp_path: Path) -> None:
     async with ModelClient(_replay_settings(), cassette_dir=tmp_path) as client:
-        with pytest.raises(ModelError, match="no cassette"):
+        with pytest.raises(ReplayMissError, match="no cassette") as raised:
             await client.complete(MESSAGES, Answer)
+    assert isinstance(raised.value, ModelError)
+    assert type(raised.value) is ReplayMissError
+
+
+def test_replay_miss_error_is_model_error() -> None:
+    error = ReplayMissError("no cassette")
+    assert isinstance(error, ModelError)
+    assert not isinstance(SchemaValidationError("bad schema"), ReplayMissError)
+
+
+async def test_replay_schema_validation_is_not_replay_miss(tmp_path: Path) -> None:
+    payload = build_request(model="fast-model", messages=MESSAGES)
+    body = _answer_body()
+    choices = body["choices"]
+    assert isinstance(choices, list)
+    first = choices[0]
+    assert isinstance(first, dict)
+    message = first["message"]
+    assert isinstance(message, dict)
+    message["content"] = json.dumps({"verdict": "dismiss"})
+    save_cassette(tmp_path, payload, body)
+    async with ModelClient(
+        _replay_settings(),
+        cassette_dir=tmp_path,
+        transport=httpx.MockTransport(_fail_network),
+    ) as client:
+        with pytest.raises(
+            SchemaValidationError, match="errored; do not guess"
+        ) as raised:
+            await client.complete(MESSAGES, Answer)
+    assert not isinstance(raised.value, ReplayMissError)
+
+
+async def test_replay_payload_mismatch_raises_replay_miss(tmp_path: Path) -> None:
+    payload = build_request(model="fast-model", messages=MESSAGES)
+    path = save_cassette(tmp_path, payload, _answer_body())
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["request"]["messages"][0]["content"] = "tampered"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    async with ModelClient(
+        _replay_settings(),
+        cassette_dir=tmp_path,
+        transport=httpx.MockTransport(_fail_network),
+    ) as client:
+        with pytest.raises(ReplayMissError, match="does not match") as raised:
+            await client.complete(MESSAGES, Answer)
+    assert isinstance(raised.value, ModelError)
+
+
+async def test_replay_unreadable_cassette_raises_replay_miss(tmp_path: Path) -> None:
+    payload = build_request(model="fast-model", messages=MESSAGES)
+    path = save_cassette(tmp_path, payload, _answer_body())
+    path.write_text("{not-json", encoding="utf-8")
+    async with ModelClient(
+        _replay_settings(),
+        cassette_dir=tmp_path,
+        transport=httpx.MockTransport(_fail_network),
+    ) as client:
+        with pytest.raises(ReplayMissError, match="not valid JSON") as raised:
+            await client.complete(MESSAGES, Answer)
+    assert isinstance(raised.value, ModelError)
 
 
 async def test_live_without_base_url_fails_clearly() -> None:
@@ -402,9 +467,27 @@ async def test_http_400_does_not_retry(
         cassette_dir=tmp_path,
         transport=httpx.MockTransport(handler),
     ) as client:
-        with pytest.raises(ModelError, match="HTTP 400"):
+        with pytest.raises(ModelError, match="HTTP 400") as raised:
             await client.complete(MESSAGES, Answer)
     assert calls["n"] == 1
+    assert not isinstance(raised.value, ReplayMissError)
+
+
+async def test_live_transport_error_is_not_replay_miss(
+    tmp_path: Path,
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    async with ModelClient(
+        _live_settings(),
+        cassette_dir=tmp_path,
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        with pytest.raises(ModelError, match="network error") as raised:
+            await client.complete(MESSAGES, Answer)
+    assert not isinstance(raised.value, ReplayMissError)
+    assert type(raised.value) is ModelError
 
 
 async def test_cache_read_from_alternate_usage_field(tmp_path: Path) -> None:
