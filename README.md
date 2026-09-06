@@ -150,11 +150,11 @@ Numbers are from a real run over 20,000 Los Angeles payment records.
    v
  5. Adjudicate     weigh the cases that need judgement
    |
-   +---> 395 dismissed .......... explained, never reaches a person
+   +---> 388 dismissed .......... explained, never reaches a person
    |
-   +---> 4 errored, 95 unrecorded ... surfaced, never dropped
+   +---> 5 errored, 75 unrecorded ... surfaced, never dropped
    |
-   +---> 774 escalated
+   +---> 800 escalated
              |
              v
    ------------------------------------------------- a person decides
