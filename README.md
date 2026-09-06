@@ -19,20 +19,33 @@ primary source listed in `docs/EVIDENCE.md`.
 
 ## Quickstart
 
+**No API key required.** Every model call is recorded and committed, so the
+whole pipeline replays offline.
+
 ```
 git clone https://github.com/tanayvasishtha/Reckon
 cd Reckon
 make demo-fast
 ```
 
-The review queue is the committed fixture in `api/fixture.json`.
+That runs the full pipeline on twenty thousand real Los Angeles payment records
+and prints the funnel: rows in, payments after aggregation, candidates after
+blocking, what the deterministic stages removed, and what the agent dismissed
+or escalated. It takes about a minute.
+
+If `uv` is missing: `pip install uv`, or see `astral.sh/uv`.
+
+To see the review queue, in two terminals:
 
 ```
 uv run uvicorn api.main:app --host 127.0.0.1 --port 8000
 npm --prefix web install && npm --prefix web run dev
 ```
 
-Open http://127.0.0.1:5173.
+Then open the address Vite prints, usually http://127.0.0.1:5173.
+
+To run it live against your own endpoint instead of the recordings, set
+`RECKON_API_KEY` and `RECKON_API_BASE`. Any OpenAI-compatible endpoint works.
 
 ## The problem is precision, not detection
 
