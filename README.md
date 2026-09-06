@@ -406,6 +406,18 @@ uv run python -u -m scripts.run_demo --source mine.csv --map mine.yaml    your o
 With `make` available, the same three are `make demo-fast`, `make demo SOURCE=oklahoma`
 and `make demo SOURCE=mine.csv MAP=mine.yaml`.
 
+**What the Oklahoma run shows, and what it does not.** It reads a different
+schema, with no invoice numbers, cp1252 encoding and a quarter of the vendor
+names redacted by the publisher, and produces 2,465 candidates through the
+deterministic stages. That is the adapter layer working on a source it was not
+designed around.
+
+Adjudication on that run will report every candidate as having no recording,
+because the committed recordings cover the Los Angeles path only. The run says
+so on screen rather than passing them through silently. To adjudicate the
+Oklahoma candidates, set `RECKON_API_KEY` and `RECKON_API_BASE` and it will call
+your endpoint live.
+
 That last one is the point of the adapter layer. Each adapter declares what its
 source cannot provide, and blocking only runs the checks the data supports. The
 Oklahoma ledger has no invoice number at all, so those signals switch off rather
