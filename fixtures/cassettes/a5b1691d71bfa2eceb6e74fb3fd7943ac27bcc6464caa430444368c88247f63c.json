@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"479.70\",\"candidate_id\":\"overpayment_vs_invoice:EVAL00000061:EVAL00000062\",\"signal\":\"overpayment_vs_invoice\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000061\",\"EVAL00000062\"]},\"related\":[],\"transactions\":[{\"amount\":\"479.70\",\"department\":\"GENERAL SERVICES\",\"description\":\"A18I5257 CPO A18 STOCK\",\"distinct_line_amounts\":[\"479.70\"],\"invoice_amount\":\"479.70\",\"invoice_canonical\":\"EVL00031\",\"invoice_date\":\"2019-04-04\",\"invoice_number_raw\":\"EVL00031\",\"line_count\":1,\"payment_date\":\"2019-04-04\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000494798\",\"transaction_id\":\"EVAL00000061\",\"vendor_canonical\":\"RUSHTRUCKCENTEROFCA\",\"vendor_id\":\"000035489\",\"vendor_name_raw\":\"RUSH TRUCK CENTER OF CA INC\"},{\"amount\":\"479.70\",\"department\":\"AGING\",\"description\":\"A18I5257 CPO A18 STOCK\",\"distinct_line_amounts\":[\"479.70\"],\"invoice_amount\":\"479.70\",\"invoice_canonical\":\"EVL00031\",\"invoice_date\":\"2019-04-04\",\"invoice_number_raw\":\"EVL00031\",\"line_count\":1,\"payment_date\":\"2019-04-04\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000494798\",\"transaction_id\":\"EVAL00000062\",\"vendor_canonical\":\"RUSHTRUCKCENTEROFCA\",\"vendor_id\":\"000035489\",\"vendor_name_raw\":\"RUSH TRUCK CENTER OF CA INC\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\n  \"candidate_id\": \"overpayment_vs_invoice:EVAL00000061:EVAL00000062\",\n  \"verdict\": \"escalate\",\n  \"explanation_type\": \"none\",\n  \"reasoning\": \"Transaction EVAL00000061 paid the full invoice amount ($479.70) for EVL00031. Transaction EVAL00000062 represents a duplicate payment of the same invoice and PO on the same date.\",\n  \"evidence\": [\n    { \"field\": \"invoice_canonical\", \"values\": [\"EVL00031\"] },\n    { \"field\": \"po_number\", \"values\": [\"CPO40240000494798\"] },\n    { \"field\": \"payment_status\", \"values\": [\"PAID\"] }\n  ],\n  \"confidence\": 1\n}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate ID:** `overpayment_vs_invoice:EVAL00000061:EVAL00000062`\n    *   **Signal:** `overpayment_vs_invoice`\n    *   **Amount at Risk:** $479.70\n    *   **Transactions:**\n        *   TX1: `EVAL00000061`. Amount: 479.70. Invoice: `EVL00031`. PO: `CPO40240000494798`. Status: PAID.\n        *   TX2: `EVAL00000062`. Amount: 479.70. Invoice: `EVL00031` (same). PO: `CPO40240000494798` (same). Status: PAID.\n    *   **Description:** Both say \"A18I5257 CPO A18 STOCK\".\n    *   **Vendor:** RUSHTRUCKCENTEROFCA.\n    *   **Dates:** Both payment dates are 2019-04-04. Invoice date is 2019-04-04.\n\n2.  **Identify the Pattern:**\n    *   Two payments ($479.70 each) for the same invoice ($EVL00031) within minutes of each other on the same date.\n    *   Total paid: $959.40.\n    *   Invoice amount: $479.70.\n    *   Overpayment: $479.70.\n    *   The signal is explicitly `overpayment_vs_invoice`.\n\n3.  **Evaluate Rules/Explanation Types:**\n    *   *cancelled?* No indication of voiding or cancellation. Both are PAID.\n    *   *line_split?* Sum of payments ($479.70 + 479.70 = 959.40) > Invoice amount ($479.70). This violates the arithmetic test rule provided: \"Legitimate parts of one invoice sum to the invoice amount.\"\n    *   *progress_payment?* No mentions of \"Progress payment 3 of 5\" or contract draws.\n    *   *recurring?* No indication of a monthly cadence specifically for this invoice pair.\n    *   *different_po?* PO numbers are identical (`CPO40240000494798`).\n    *   *partial_pair?* Same arithmetic issue as line_split. Sum > Total.\n    *   *none?* This fits here because I cannot find a valid explanation.\n\n4.  **Apply \"Arithmetic Test\" / \"Duplicate\" Logic:**\n    *   The prompt says: \"If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split.\"\n    *   Here, TX1 pays the invoice in full ($479.70). TX2 pays the same invoice again ($479.70).\n    *   This is an actual duplicate payment (double payment).\n    *   The prompt instructions for Stage 5: \"Your job is to kill candidates... If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human.\"\n    *   Since TX1 covered the full invoice, TX2 is an overpayment/duplicate. There is no valid \"dismiss\" reason (no line_split, no partial, no schedule). It looks recoverable (money is likely held in suspense or marked for adjustment).\n\n5.  **Formulate Output:**\n    *   **Verdict:** escalate. The amount needs to be recovered.\n    *   **Explanation Type:** none (since it's not a legitimate scenario like split or scheduled).\n    *   **Reasoning:** The invoice ($EVL00031) was paid in full ($479.70) via transaction EVAL00000061. Transaction EVAL00000062 represents a duplicate payment of the same amount for the same invoice and PO on the same date.\n    *   **Evidence:**\n        *   Field: invoice_canonical, Values: [\"EVL00031\"]\n        *   Field: po_number, Values: [\"CPO40240000494798\"]\n        *   Field: payment_status, Values: [\"PAID\"]\n    *   **Confidence:** High (1.0). The data shows two identical rows with identical timestamps and values for the same invoice.\n\n6.  **Final Check:**\n    *   Did I sum them? 479.70 + 479.70 = 959.40 > 479.70. Correct.\n    *   Are they recoverable duplicates? Yes.\n    *   JSON format? Yes.\n\n    *Drafting JSON:*\n    ```json\n    {\n      \"candidate_id\": \"overpayment_vs_invoice:EVAL00000061:EVAL00000062\",\n      \"verdict\": \"escalate\",\n      \"explanation_type\": \"none\",\n      \"reasoning\": \"Transaction EVAL00000061 paid the full invoice amount for EVL00031. Transaction EVAL00000062 represents a duplicate payment of the same invoice and PO, resulting in an overpayment.\",\n      \"evidence\": [\n        { \"field\": \"invoice_canonical\", \"values\": [\"EVL00031\"] },\n        { \"field\": \"po_number\", \"values\": [\"CPO40240000494798\"] },\n        { \"field\": \"payment_status\", \"values\": [\"PAID\"] }\n      ],\n      \"confidence\": 1\n    }\n    ```",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788699685,
+    "id": "chatcmpl-c3247045-e493-4d05-a111-8124e97ce5c6",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1320,
+      "prompt_tokens": 1052,
+      "prompt_tokens_details": null,
+      "total_tokens": 2372
+    }
+  }
+}

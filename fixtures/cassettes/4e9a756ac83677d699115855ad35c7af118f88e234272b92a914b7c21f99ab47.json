@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.\n",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"2700\",\"candidate_id\":\"invoice_variant:AD26240000114149:AD26240000114839\",\"signal\":\"invoice_variant\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"AD26240000114149\",\"AD26240000114839\"]},\"related\":[],\"transactions\":[{\"amount\":\"2700\",\"department\":\"FIRE\",\"description\":\"SAM BROWN PROBATIONARY SHIELD\",\"distinct_line_amounts\":[\"2700\"],\"invoice_amount\":\"2700\",\"invoice_canonical\":\"38240000066553\",\"invoice_date\":\"2024-05-10\",\"invoice_number_raw\":\"38240000066553\",\"line_count\":1,\"payment_date\":\"2024-06-03\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38220000484723\",\"transaction_id\":\"AD26240000114149\",\"vendor_canonical\":\"SAMBROWNSHIELDS\",\"vendor_id\":\"000031349\",\"vendor_name_raw\":\"SAM BROWN SHIELDS\"},{\"amount\":\"2700\",\"department\":\"FIRE\",\"description\":\"SAM BROWN FIREFIGHTER HELMET SHIELD\",\"distinct_line_amounts\":[\"2700\"],\"invoice_amount\":\"2700\",\"invoice_canonical\":\"38240000066994\",\"invoice_date\":\"2024-05-14\",\"invoice_number_raw\":\"38240000066994\",\"line_count\":1,\"payment_date\":\"2024-06-04\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO38220000484724\",\"transaction_id\":\"AD26240000114839\",\"vendor_canonical\":\"SAMBROWNSHIELDS\",\"vendor_id\":\"000031349\",\"vendor_name_raw\":\"SAM BROWN SHIELDS\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\": \"invoice_variant:AD26240000114149:AD26240000114839\", \"verdict\": \"dismiss\", \"explanation_type\": \"different_po\", \"reasoning\": \"Distinct products and Purchase Orders (CPO38220000484723 vs CPO38220000484724) indicate two separate orders rather than a duplicate.\", \"evidence\": [{\"field\": \"po_number\", \"values\": [\"CPO38220000484723\", \"CPO38220000484724\"]}, {\"field\": \"description\", \"values\": [\"SAM BROWN PROBATIONARY SHIELD\", \"SAM BROWN FIREFIGHTER HELMET SHIELD\"]}, {\"field\": \"invoice_amount\", \"values\": [\"2700\", \"2700\"]}], \"confidence\": 1}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Request:**\n    *   **Role:** Adjudicator for duplicate-payment pairs in accounts payable (Stage 5).\n    *   **Goal:** Kill candidates (dismiss) if a legitimate explanation exists; Escalate if it looks like a recoverable duplicate or no explanation exists.\n    *   **Constraint:** Return a single JSON object. No markdown, no commentary.\n    *   **Input:** A candidate pair identified by \"invoice_variant\".\n    *   **Data:**\n        *   Candidate ID: `invoice_variant:AD26240000114149:AD26240000114839`\n        *   Signal: `invoice_variant`\n        *   Related: Empty array\n        *   Transaction 1: ID `AD26240000114149`, Amount 2700, Vendor `SAMBROWNSHIELDS`, PO `CPO38220000484723`, Inv `38240000066553`, Date `2024-05-10`, Paid.\n        *   Transaction 2: ID `AD26240000114839`, Amount 2700, Vendor `SAMBROWNSHIELDS`, PO `CPO38220000484724`, Inv `38240000066994`, Date `2024-05-14`, Paid.\n\n2.  **Analyze the Pair:**\n    *   **Vendor:** Same (`SAMBROWNSHIELDS`).\n    *   **Amounts:** Same ($2700).\n    *   **Dates:** Close (5/10 vs 5/14).\n    *   **POs:** Different (`CPO38220000484723` vs `CPO38220000484724`). Note the last two digits changed. This strongly suggests two distinct Purchase Orders rather than a duplicate invoice payment for the same PO.\n    *   **Descriptions:** Different. One says \"SAM BROWN PROBATIONARY SHIELD\", the other \"SAM BROWN FIREFIGHTER HELMET SHIELD\". These are distinct products.\n    *   **Status:** Both are PAID.\n    *   **Totals:** $2700 + $2700 = $5400. Neither invoice total matches the sum of the payments if it were a split (but they are separate invoices).\n    *   **Invoice Numbers:** Different (`38240000066553` vs `38240000066994`).\n\n3.  **Evaluate Candidate Explanations:**\n    *   *Cancelled:* No indication of a void or reversal.\n    *   *Line Split:* They are two distinct payments for two distinct invoices/products. The sum of the two invoice amounts ($2700 + $2700) equals the sum of the payments. This does not make them a \"split\" of one invoice; they are distinct invoices. Also, description and PO numbers differ. -> **No**.\n    *   *Progress Payment:* One description mentions \"SHIELD\" (could be safety gear), but no specific phrasing like \"Progress payment 3 of 5\" is seen. They are separate amounts ($2700 each) and distinct POs. -> **No**.\n    *   *Recurring:* No indication of a scheduled series based on provided data. -> **No**.\n    *   *Different PO:* This fits perfectly. The POs differ by a digit. The products are distinct. They are two separate purchases made at slightly different times. This explains why they are paired based on \"invoice variant\" (different invoice numbers/CPOs) but are not actually a duplicate of the same transaction. This is the legitimate explanation.\n    *   *Partial Pair:* No indication of a partial payment against one specific invoice (no \"partial payment\" or \"balance\" in description, and the invoice numbers are unique and separate). -> **No**.\n\n4.  **Apply Arithmetic Rule:**\n    *   `2700 + 2700` vs `2700` (Invoice 1). `2700` vs `2700` (Invoice 2).\n    *   It is not a split of one invoice.\n    *   Each payment matches its respective invoice amount exactly.\n    *   This passes the arithmetic check.\n\n5.  **Determine Verdict:**\n    *   Explanation: Different PO.\n    *   Verdict: dismiss.\n\n6.  **Construct JSON:**\n    *   `candidate_id`: \"invoice_variant:AD26240000114149:AD26240000114839\"\n    *   `verdict`: \"dismiss\"\n    *   `explanation_type`: \"different_po\"\n    *   `reasoning`: \"Distinct products and Purchase Orders (CPO38220000484723 vs CPO38220000484724) indicate two separate orders rather than a duplicate.\"\n    *   `evidence`: `[{\"field\": \"po_number\", \"values\": [\"CPO38220000484723\", \"CPO38220000484724\"]}, {\"field\": \"description\", \"values\": [\"SAM BROWN PROBATIONARY SHIELD\", \"SAM BROWN FIREFIGHTER HELMET SHIELD\"]}, {\"field\": \"invoice_amount\", \"values\": [\"2700\", \"2700\"]}]`\n    *   `confidence`: 1 (High certainty due to different POs and distinct descriptions).\n\n7.  **Final Review:**\n    *   Does it meet all constraints? Yes. JSON only. Correct keys. Verdict dismiss. Explanation \"different_po\". Reasoning clear. Evidence included. Confidence high.\n\n8.  **Output Generation:** (Produce the JSON).",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788701254,
+    "id": "chatcmpl-01041bf6-13b0-42e6-8222-7c299e750730",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1364,
+      "prompt_tokens": 1051,
+      "prompt_tokens_details": null,
+      "total_tokens": 2415
+    }
+  }
+}

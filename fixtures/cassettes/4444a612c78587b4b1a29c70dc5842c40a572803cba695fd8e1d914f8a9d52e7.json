@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"170.22\",\"candidate_id\":\"split_payment:EVAL00000063:EVAL00000064\",\"signal\":\"split_payment\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000063\",\"EVAL00000064\"]},\"related\":[],\"transactions\":[{\"amount\":\"170.22\",\"department\":\"GENERAL SERVICES\",\"description\":\"INVOICE # 49654\",\"distinct_line_amounts\":[\"170.22\"],\"invoice_amount\":\"170.22\",\"invoice_canonical\":\"EVL00032\",\"invoice_date\":\"2019-04-05\",\"invoice_number_raw\":\"EVL00032\",\"line_count\":1,\"payment_date\":\"2019-04-05\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000461126\",\"transaction_id\":\"EVAL00000063\",\"vendor_canonical\":\"ALSAUTOTOPS\",\"vendor_id\":\"000000144\",\"vendor_name_raw\":\"AL'S AUTO TOPS\"},{\"amount\":\"170.22\",\"department\":\"AGING\",\"description\":\"INVOICE # 49654\",\"distinct_line_amounts\":[\"170.22\"],\"invoice_amount\":\"170.22\",\"invoice_canonical\":\"EVL00032\",\"invoice_date\":\"2019-04-05\",\"invoice_number_raw\":\"EVL00032\",\"line_count\":1,\"payment_date\":\"2019-04-05\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000461126\",\"transaction_id\":\"EVAL00000064\",\"vendor_canonical\":\"ALSAUTOTOPS\",\"vendor_id\":\"000000144\",\"vendor_name_raw\":\"AL'S AUTO TOPS\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\": \"split_payment:EVAL00000063:EVAL00000064\", \"verdict\": \"escalate\", \"explanation_type\": \"none\", \"reasoning\": \"Both transactions are marked PAID with the same amount and invoice number. The sum of payments (340.44) exceeds the invoice amount (170.22), ruling out a legitimate partial payment or split. This appears to be a double payment for the same invoice.\", \"evidence\": [{\"field\": \"amount\", \"values\": [\"170.22\", \"170.22\"]}, {\"field\": \"invoice_amount\", \"values\": [\"170.22\"]}, {\"field\": \"payment_status\", \"values\": [\"PAID\", \"PAID\"]}], \"confidence\": 0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate ID:** `split_payment:EVAL00000063:EVAL00000064`\n    *   **Signal:** `split_payment`\n    *   **Transactions:**\n        *   Transaction 1 (EVAL00000063): Amount 170.22, Dept GENERAL SERVICES, Desc \"INVOICE # 49654\", Vendor AL'S AUTO TOPS.\n        *   Transaction 2 (EVAL00000064): Amount 170.22, Dept AGING, Desc \"INVOICE # 49654\", Vendor AL'S AUTO TOPS.\n    *   **Related:** Empty array.\n    *   **Common Fields:** Same vendor, same invoice number (EVL00032), same PO, same amount, same date, same status (PAID), same line count (1).\n    *   **The Conflict:** Two PAID transactions for the *same* invoice amount.\n\n2.  **Apply Rules:**\n    *   *Arithmetic Test:* Two payments sum to 340.44. The invoice amount is 170.22. Sum > Invoice Amount. Therefore, they are *not* part of the same invoice (not a split/payment pair for one invoice).\n    *   *Definition of Duplicate:* Two entries for the same invoice (EVL00032) that are both PAID. One is not a partial payment or adjustment to the other; they are two full payments. This constitutes a recoverable duplicate payment.\n    *   *Verdict Decision:* Escalate (cannot dismiss with an explanation type like line_split or partial_pair because the math doesn't fit).\n    *   *Explanation Type:* \"none\" (only valid with verdict=escalate).\n\n3.  **Draft Reasoning:**\n    *   The signal suggested a split payment because the IDs are grouped, but the amounts are identical.\n    *   Two distinct transactions (paid on same date) are both PAID.\n    *   Total paid (340.44) exceeds the Invoice Amount (170.22).\n    *   No distinct line sums make sense here because line_count is 1 for both.\n    *   This appears to be a double billing or payment scenario where the vendor received payment twice.\n\n4.  **Construct JSON:**\n    *   candidate_id: \"split_payment:EVAL00000063:EVAL00000064\"\n    *   verdict: \"escalate\"\n    *   explanation_type: \"none\"\n    *   reasoning: \"Both transactions are PAID. The total payment amount (340.44) exceeds the invoice amount (170.22). These are likely two distinct payments for the same invoice, not a partial payment split.\"\n    *   evidence:\n        *   field: \"amount\"\n        *   values: [\"170.22\", \"170.22\"]\n        *   field: \"invoice_amount\"\n        *   values: [\"170.22\"]\n        *   field: \"payment_status\"\n        *   values: [\"PAID\", \"PAID\"]\n    *   confidence: 0.95 (Strong evidence of duplicate payment due to math check failing for partials, though exactly two full payments is the outcome).\n\n5.  **Refine Output:** Ensure JSON format is strict, no markdown.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788699780,
+    "id": "chatcmpl-b544af10-357c-4e03-abf7-f45b5954f98b",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 837,
+      "prompt_tokens": 1019,
+      "prompt_tokens_details": null,
+      "total_tokens": 1856
+    }
+  }
+}

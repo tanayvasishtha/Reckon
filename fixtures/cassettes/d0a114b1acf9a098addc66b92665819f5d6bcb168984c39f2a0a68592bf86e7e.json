@@ -1,0 +1,56 @@
+{
+  "request": {
+    "messages": [
+      {
+        "content": "You adjudicate candidate duplicate-payment pairs for an accounts payable exception pipeline. You are stage 5. Deterministic rules have already removed cancelled statuses, same-id pairs, and proven distribution-line splits. What remains is judgement.\n\nYour job is to kill candidates, not to raise them. Most pairs that reach you have a legitimate explanation. A false positive is worse than a miss: telling a vendor they owe money when they do not damages a commercial relationship. If you can name a matching explanation, dismiss. If the pair still looks like a recoverable duplicate, or you cannot explain it, escalate to a human. Do not guess.\n\nReturn a single JSON object and nothing else. No markdown, no commentary.\n\nJSON object keys, and no others:\n- candidate_id: string, the id you were given\n- verdict: \"dismiss\" or \"escalate\"\n- explanation_type: \"cancelled\" | \"line_split\" | \"progress_payment\" | \"recurring\" | \"different_po\" | \"partial_pair\" | \"none\"\n- reasoning: a short string a human reviewer can read\n- evidence: array of objects {\"field\": string, \"values\": [string, ...]}\n- confidence: number between 0 and 1, honest. If you are unsure, lower it.\n\nverdict=dismiss when you found a legitimate explanation. Set explanation_type to that explanation. verdict=escalate when the pair still looks recoverable or you cannot explain it; then explanation_type must be none. Do not emit verdict=errored; invalid output is marked errored by the caller.\n\nExplanation types:\n- cancelled: one side reverses, voids, or cancels the other. Status may be absent; the description or a matching negative amount can be the only tell.\n- line_split: distribution lines of one invoice, not two payments. Look at line_count and distinct_line_amounts.\n- progress_payment: scheduled contract draws. The tell is often a description such as \"Progress payment 3 of 5\". Invoice numbers and dates may differ; both sides can be PAID.\n- recurring: a regular cadence (monthly is common) for the same vendor and amount with different invoice numbers. Related rows, when supplied, are other payments in the same series; use the dates.\n- different_po: purchase orders differ, often by one digit. Two legitimate orders, not a duplicate.\n- partial_pair: a short payment plus a later remainder against the same invoice. Descriptions may say partial payment or balance outstanding.\n- none: only with verdict=escalate.\n\nJudge the two transaction rows and any related rows. The candidate signal is why the pair was flagged, not proof it is a duplicate. Amounts in the payload are decimal strings; compare them as decimals, never as binary floating point.\n\n\nArithmetic test, apply it before dismissing as line_split or partial_pair. Legitimate parts of one invoice sum to the invoice amount. If the payments together exceed the invoice amount, they are not parts of it, and line_split and partial_pair are both wrong. If one side already pays the invoice in full and the other pays any part of it again, that is a duplicate, not a split. If a single payment exceeds the invoice amount on its own, that is an overpayment. In all three cases, escalate.",
+        "role": "system"
+      },
+      {
+        "content": "{\"candidate\":{\"amount_at_risk\":\"170.22\",\"candidate_id\":\"overpayment_vs_invoice:EVAL00000063:EVAL00000064\",\"signal\":\"overpayment_vs_invoice\",\"stage_generated\":\"blocking\",\"transaction_ids\":[\"EVAL00000063\",\"EVAL00000064\"]},\"related\":[],\"transactions\":[{\"amount\":\"170.22\",\"department\":\"GENERAL SERVICES\",\"description\":\"INVOICE # 49654\",\"distinct_line_amounts\":[\"170.22\"],\"invoice_amount\":\"170.22\",\"invoice_canonical\":\"EVL00032\",\"invoice_date\":\"2019-04-05\",\"invoice_number_raw\":\"EVL00032\",\"line_count\":1,\"payment_date\":\"2019-04-05\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000461126\",\"transaction_id\":\"EVAL00000063\",\"vendor_canonical\":\"ALSAUTOTOPS\",\"vendor_id\":\"000000144\",\"vendor_name_raw\":\"AL'S AUTO TOPS\"},{\"amount\":\"170.22\",\"department\":\"AGING\",\"description\":\"INVOICE # 49654\",\"distinct_line_amounts\":[\"170.22\"],\"invoice_amount\":\"170.22\",\"invoice_canonical\":\"EVL00032\",\"invoice_date\":\"2019-04-05\",\"invoice_number_raw\":\"EVL00032\",\"line_count\":1,\"payment_date\":\"2019-04-05\",\"payment_method\":\"CHECK\",\"payment_status\":\"PAID\",\"po_number\":\"CPO40240000461126\",\"transaction_id\":\"EVAL00000064\",\"vendor_canonical\":\"ALSAUTOTOPS\",\"vendor_id\":\"000000144\",\"vendor_name_raw\":\"AL'S AUTO TOPS\"}]}",
+        "role": "user"
+      }
+    ],
+    "model": "glm-4-7-flash",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "response": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "message": {
+          "annotations": null,
+          "audio": null,
+          "content": "{\"candidate_id\":\"overpayment_vs_invoice:EVAL00000063:EVAL00000064\",\"verdict\":\"escalate\",\"explanation_type\":\"none\",\"reasoning\":\"The combined payment amount ($340.44) is double the invoice amount ($170.22). These appear to be duplicate payments for the same invoice, not a legitimate split or partial payment.\",\"evidence\":[{\"field\":\"invoice_amount\",\"values\":[\"170.22\"]},{\"field\":\"transaction_amount\",\"values\":[\"170.22\",\"170.22\"]}],\"confidence\":0.95}",
+          "function_call": null,
+          "reasoning": "1.  **Analyze the Input:**\n    *   **Candidate ID:** `overpayment_vs_invoice:EVAL00000063:EVAL00000064`\n    *   **Signal:** `overpayment_vs_invoice`\n    *   **Transaction IDs:** `EVAL00000063`, `EVAL00000064`\n    *   **Amount at Risk:** `170.22`\n    *   **Transactions:**\n        *   Tx 1 (EVAL00000063): Amount `170.22`, Invoice `EVL00032`, Invoice Amount `170.22`, Status `PAID`. Matches Tx 2 on almost everything.\n        *   Tx 2 (EVAL00000064): Amount `170.22`, Invoice `EVL00032`, Invoice Amount `170.22`, Status `PAID`. Matches Tx 1 on almost everything.\n    *   **Related:** Empty.\n    *   **Constraints:**\n        *   Judges `overpayment_vs_invoice`.\n        *   Must calculate arithmetic. If sum > invoice amount, escalate.\n        *   Must dismiss if legitimate explanation exists.\n        *   If dismissed, `explanation_type` must be one of the specific types.\n        *   JSON output only.\n\n2.  **Evaluate the Case:**\n    *   The pair consists of two payments, both for the exact same amount (`170.22`).\n    *   The invoice (`EVL00032`) has an amount of `170.22`.\n    *   Total paid = `170.22 + 170.22 = 340.44`.\n    *   Invoice amount = `170.22`.\n    *   Condition: `Total Paid > Invoice Amount`.\n    *   Result: This is an overpayment situation. The payments are not just a split or partial payment; they exceed the liability twice over.\n\n3.  **Determine Verdict:**\n    *   Is there a legitimate explanation?\n        *   `cancelled`: No reversal or void status seen.\n        *   `line_split`: Payments sum to `340.44`, invoice is `170.22`. Incorrect.\n        *   `progress_payment`: No contract details visible in the text fields provided. Descriptions are identical and standard.\n        *   `recurring`: Could be recurring, but usually implies a schedule of *normal* payments. Paying double for the same invoice with no indication of a second invoice is likely fraud or a data error rather than a recurring series for new work. However, strictly speaking, without evidence of a new invoice, it looks like a duplicate overpayment.\n        *   `different_po`: PONumbers are identical (`CPO40240000461126`).\n        *   `partial_pair`: Sum exceeds total.\n    *   Since the arithmetic shows a clear overpayment (double payment), and no logical explanation like line split or partial payment fits (because mathematically they don't add up to the invoice), this should be escalated. The pair represents a potential double charge.\n\n4.  **Drafting the JSON:**\n    *   `candidate_id`: `\"overpayment_vs_invoice:EVAL00000063:EVAL00000064\"`\n    *   `verdict`: `\"escalate\"`\n    *   `explanation_type`: `\"none\"` (because it doesn't fit the categories of valid splits or similar, and the signal is explicitly \"overpayment\").\n    *   `reasoning`: \"Both transactions pay the full invoice amount of $170.22. Combined payment ($340.44) exceeds the invoice amount. Likely a duplicate overpayment.\"\n    *   `evidence`:\n        *   field: \"invoice_amount\", values: [\"170.22\"]\n        *   field: \"transaction_amount\", values: [\"170.22\", \"170.22\"]\n    *   `confidence`: 0.95 (The math is definitive).\n\n5.  **Refining Reasoning/Evidence:**\n    *   The prompt asks for honesty.\n    *   Reasoning: The total paid ($340.44) is double the invoice amount ($170.22).\n    *   Evidence: Invoice amount 170.22, Transaction amounts 170.22 and 170.22.\n\n6.  **Final Check:**\n    *   Did I name a matching explanation? No.\n    *   Is it a recoverable duplicate? Yes (money was paid twice).\n    *   Output format: JSON only.",
+          "refusal": null,
+          "role": "assistant"
+        },
+        "routed_experts": null,
+        "stop_reason": null,
+        "token_ids": null
+      }
+    ],
+    "created": 1788699685,
+    "id": "chatcmpl-d0e14cc4-cf09-4dda-ac6c-5d5cc86d93f5",
+    "kv_transfer_params": null,
+    "metrics": null,
+    "model": "glm-4-7-flash",
+    "object": "chat.completion",
+    "prompt_logprobs": null,
+    "prompt_text": null,
+    "prompt_token_ids": null,
+    "service_tier": null,
+    "system_fingerprint": "vllm-0.25.1-c3468000",
+    "usage": {
+      "completion_tokens": 1025,
+      "prompt_tokens": 1023,
+      "prompt_tokens_details": null,
+      "total_tokens": 2048
+    }
+  }
+}

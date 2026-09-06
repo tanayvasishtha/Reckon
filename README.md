@@ -258,6 +258,15 @@ Sources, licences and the ones that turned out to be unusable are documented in
 - Checkbook L.A., City of Los Angeles Controller, CC BY 4.0
 - State of Oklahoma Vendor Payments, Office of Management and Enterprise Services
 
+## Credits
+
+- Data: Checkbook L.A., City of Los Angeles Controller, licensed CC BY 4.0.
+- Data: State of Oklahoma Vendor Payments, Office of Management and Enterprise Services, licensed CC BY.
+- Inference for the recorded runs: TensorMux, `api.tensormux.com`, running `glm-4-7-flash`.
+- Built with AO, Agent Orchestrator, `aoagents.dev`.
+- Python libraries: pydantic, pandas, httpx, PyYAML, FastAPI, pytest, ruff, mypy, uv.
+- Frontend: React, Vite, Tailwind CSS, TypeScript.
+
 **Everything this system outputs is a candidate for human review.** It is not an
 assertion that an error or any wrongdoing occurred. Apparent duplicates in
 public ledgers frequently have legitimate explanations, and the publishers say
