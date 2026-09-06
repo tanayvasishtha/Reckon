@@ -63,6 +63,14 @@ Judge the two transaction rows and any related rows. The candidate signal \
 is why the pair was flagged, not proof it is a duplicate. Amounts in the \
 payload are decimal strings; compare them as decimals, never as binary \
 floating point.
+
+Arithmetic test, apply it before dismissing as line_split or partial_pair. \
+Legitimate parts of one invoice sum to the invoice amount. If the payments \
+together exceed the invoice amount, they are not parts of it, and \
+line_split and partial_pair are both wrong. If one side already pays the \
+invoice in full and the other pays any part of it again, that is a \
+duplicate, not a split. If a single payment exceeds the invoice amount on \
+its own, that is an overpayment. In all three cases, escalate.
 """
 
 

@@ -407,6 +407,8 @@ def _assert_summary_invariants(summary: AdjudicationSummary) -> None:
     )
 
 
+def test_stable_instructions_include_invoice_sum_test() -> None:
+    assert "sum to the invoice amount" in STABLE_INSTRUCTIONS
 
 
 def test_prompt_prefix_is_stable_and_payload_is_last() -> None:
