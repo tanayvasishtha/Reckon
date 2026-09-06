@@ -39,13 +39,13 @@ Precision, recall, and F1 are computed on planted duplicates. A finding is `verd
 
 | metric | rules-only | full pipeline cold | full pipeline warm |
 | --- | --- | --- | --- |
-| wall_clock_s | 0.928034 | 2.946890 | 2.805440 |
-| tokens_in | 0 | 1491449 | 1491449 |
-| tokens_out | 0 | 4302102 | 4302102 |
+| wall_clock_s | 1.032109 | 4.697283 | 3.057296 |
+| tokens_in | 0 | 1634540 | 1634540 |
+| tokens_out | 0 | 4776672 | 4776672 |
 | cache_read | 0 | 0 | 0 |
 | cache_hit_rate | 0.000000 | 0.000000 | 0.000000 |
 | token_cost | 0 | 0 | 0 |
 | model_escalation_rate | 0.000000 | 0.000000 | 0.000000 |
-| escalate | 1731 | 767 | 767 |
-| dismiss | 11 | 823 | 823 |
-| errored | 0 | 152 | 152 |
+| escalate | 1731 | 871 | 871 |
+| dismiss | 11 | 868 | 868 |
+| errored | 0 | 3 | 3 |

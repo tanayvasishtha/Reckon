@@ -142,11 +142,23 @@ while quoting the precision gain would be dishonest.
 
 ### Reliability
 
-166 of 1,731 candidates returned `errored` rather than a verdict, a rate of
-9.6%. These are calls whose responses failed schema validation or never
-completed inside the retry budget. They are surfaced in the review queue
-flagged for manual attention. They are never silently dropped and never
-guessed at. Reducing that rate is the first thing worth fixing next.
+3 of 1,731 candidates return `errored` rather than a verdict, a rate of 0.17%.
+An errored candidate reaches the review queue flagged for attention. It is
+never silently dropped and never guessed at.
+
+Getting there took finding a real defect. An earlier run errored on 152
+candidates, and the obvious reading was that the model had failed on them. It
+had not. Validating all 1,731 recorded responses against the schema showed every
+one of those 152 carried a correct verdict, a correct explanation type and sound
+reasoning, and was rejected because a single field came back shaped as a nested
+list instead of a flat one. Strict validation was doing exactly what it was
+built to do: refusing to guess at a response it could not parse. The fix was a
+coercion on that one field.
+
+Two things made that diagnosis possible. Every model call is recorded, so the
+failures could be replayed and inspected rather than reasoned about. And
+failures are surfaced as a distinct verdict rather than dropped, so they were
+countable in the first place.
 
 ## What broke
 
@@ -180,7 +192,13 @@ used here is a reasoning model that emits its reasoning as completion tokens.
 With a low `max_tokens` the entire budget goes to reasoning and the answer
 comes back as an empty string with `finish_reason: stop`. Nothing is raised and
 nothing is logged, so the only symptom is a verdict that fails validation later.
-Eight cassettes were recorded that way before it was understood.
+
+**152 verdicts were thrown away over one field's shape.** The model returned
+`evidence[].values` as a nested list on some responses where the schema expected
+a flat one, so strict validation rejected the whole response even though the
+judgement inside it was correct. The error rate looked like a model reliability
+problem and was a serialisation mismatch. Coercing that one field took the rate
+from 8.8% to 0.17%.
 
 ## How it was built
 
